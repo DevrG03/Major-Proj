@@ -437,7 +437,7 @@ ls ~/PX4-Autopilot/build/px4_sitl_default/bin/px4
 
 ### 1.12 Build MicroXRCE-DDS Agent
 
-> **Version pin:** The agent version MUST match the client bundled in PX4. PX4 v1.17 bundles client v2.4.0 — use agent **v2.4.2**.
+> **Version pin:** The agent version MUST match the client bundled in PX4. PX4 v1.17 bundles client v2.4.0 — use agent **v2.4.3** (v2.4.0–v2.4.2 have a broken fastdds `2.12.x` tag reference).
 > **GCC 15 note:** Building without `-fno-stack-protector` causes "stack smashing detected" at runtime on Ubuntu 26.04.
 
 ```bash
@@ -446,7 +446,7 @@ cd ~
 git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
 cd Micro-XRCE-DDS-Agent
 git fetch --tags
-git checkout v2.4.2
+git checkout v2.4.3
 mkdir build && cd build
 
 cmake .. \
@@ -608,7 +608,7 @@ cd ~
 git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
 cd Micro-XRCE-DDS-Agent
 git fetch --tags
-git checkout v2.4.2
+git checkout v2.4.3
 mkdir build && cd build
 
 cmake .. \
