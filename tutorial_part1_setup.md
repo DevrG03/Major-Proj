@@ -437,13 +437,16 @@ ls ~/PX4-Autopilot/build/px4_sitl_default/bin/px4
 
 ### 1.12 Build MicroXRCE-DDS Agent
 
-> **GCC 15 note:** Building without `-fno-stack-protector` causes "stack smashing detected" at runtime on Ubuntu 26.04. Always use the flags below.
+> **Version pin:** The agent version MUST match the client bundled in PX4. PX4 v1.17 bundles client v2.4.0 — use agent **v2.4.2**.
+> **GCC 15 note:** Building without `-fno-stack-protector` causes "stack smashing detected" at runtime on Ubuntu 26.04.
 
 ```bash
 # [PC-1]
 cd ~
 git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
 cd Micro-XRCE-DDS-Agent
+git fetch --tags
+git checkout v2.4.2
 mkdir build && cd build
 
 cmake .. \
@@ -600,10 +603,12 @@ sudo systemctl restart ollama
 ### 2.10 MicroXRCE-DDS Agent on PC-2
 
 ```bash
-# [PC-2] Same as PC-1 step 1.12 — GCC 15 flags required
+# [PC-2] Same as PC-1 step 1.12 — same version pin and GCC 15 flags
 cd ~
 git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
 cd Micro-XRCE-DDS-Agent
+git fetch --tags
+git checkout v2.4.2
 mkdir build && cd build
 
 cmake .. \
