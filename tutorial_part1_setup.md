@@ -238,8 +238,18 @@ printenv CYCLONEDDS_URI
 # [PC-1]
 mkdir -p ~/major_ws/src
 cd ~/major_ws
+
+# Create venv WITH system site-packages so ROS2 Python tools are visible
+# (without --system-site-packages, catkin_pkg / rosidl_adapter are missing)
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+
+# Pin empy — ROS2 Lyrical needs 3.x, not 4.x
+pip install 'empy==3.3.4'
+
 colcon build
 echo "source ~/major_ws/install/setup.bash" >> ~/.bashrc
+echo "source ~/major_ws/.venv/bin/activate" >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -251,9 +261,11 @@ ls ~/major_ws/
 
 ### 1.6 Install Python Dependencies
 
+> **Note:** The venv from step 1.5 must be active (`source ~/major_ws/.venv/bin/activate`). Use `pip`, not `pip3`, so packages install into the venv.
+
 ```bash
-# [PC-1] Install all Python packages needed
-pip3 install \
+# [PC-1] Install all Python packages needed (venv must be active)
+pip install \
   pydantic==2.* \
   faster-whisper \
   requests \
@@ -298,8 +310,8 @@ sudo apt install -y \
 ```
 
 ```bash
-# [PC-1] PX4 Python build tools
-pip3 install \
+# [PC-1] PX4 Python build tools (venv must be active)
+pip install \
   kconfiglib \
   jinja2 \
   jsonschema \
@@ -489,22 +501,47 @@ curl http://localhost:11434/api/tags
 ## PART 2: PC-2 Base System
 
 > **All steps in Part 2 run on PC-2 only, unless noted.**
-> Steps 2.1 through 2.7 are identical to PC-1. The differences start at 2.8.
 
-### 2.1 — 2.6: Mirror PC-1 Setup
+### 2.1 — 2.5: Mirror PC-1 Setup
 
-Run these on PC-2, identical to Part 1:
+Run these on PC-2, identical to Part 1 (Steps 1.1 – 1.5 only):
 - Step 1.1: Update Ubuntu
 - Step 1.2: Install system dependencies
 - Step 1.3: Install ROS2 Lyrical
 - Step 1.4: Configure CycloneDDS (same config, same IPs — both PCs list both IPs as peers)
-- Step 1.5: Create ROS2 workspace
-- Step 1.6: Install Python dependencies
+- Step 1.5: Create ROS2 workspace + venv (this creates `~/major_ws/.venv` with `--system-site-packages` and pins `empy==3.3.4`)
+
+> **Do NOT run Step 1.6 from PC-1** — PC-2 does not need STT, audio, or vision packages. Use the PC-2 specific package list below instead.
+
+### 2.6 Install Python Dependencies on PC-2
+
+PC-2 only runs the Wingman NLU and commander nodes — no microphone, no camera detection, no Whisper.
+
+```bash
+# [PC-2] Activate venv (created in Step 1.5)
+source ~/major_ws/.venv/bin/activate
+
+# Install only what PC-2 needs
+pip install \
+  'pydantic==2.*' \
+  requests \
+  numpy \
+  rich \
+  kconfiglib jinja2 jsonschema pyros-genmsg packaging toml future pyserial
+```
+
+**Verify:**
+```bash
+python3 -c "import pydantic; print('pydantic', pydantic.__version__)"
+python3 -c "import rich; print('rich ok')"
+pip show empy | grep Version
+# Must show: Version: 3.3.4
+```
 
 ### 2.7 Install px4_msgs on PC-2
 
 ```bash
-# [PC-2] Same as PC-1 step 1.8
+# [PC-2] Clone and build px4_msgs
 cd ~/major_ws/src
 git clone https://github.com/PX4/px4_msgs.git --branch main
 cd ~/major_ws
@@ -514,16 +551,6 @@ echo "source ~/major_ws/install/setup.bash" >> ~/.bashrc
 ```
 
 ### 2.8 Install PX4 on PC-2 (No Gazebo)
-
-```bash
-# [PC-2] PX4 dependencies (same as PC-1 step 1.7)
-sudo apt install -y \
-  astyle libeigen3-dev libopencv-dev protobuf-compiler \
-  python3-jinja2 python3-jsonschema python3-toml python3-numpy \
-  python3-packaging python3-kconfiglib
-
-pip3 install kconfiglib jinja2 jsonschema pyros-genmsg packaging toml future 'empy==3.3.4' pyserial
-```
 
 ```bash
 # [PC-2] Clone PX4 (same version as PC-1 — MUST match exactly)
