@@ -683,16 +683,20 @@ ros2 topic echo /network_test_reverse
 
 ### 3.3 Measure Round-Trip Latency
 
-```bash
-# [PC-1] Install topic tools if not present
-sudo apt install -y ros-lyrical-topic-tools || true
+> **Note:** `ros2 topic delay` only works on stamped messages (with a `header` field). `std_msgs/String` has no header, so use `ping` for network latency and `ros2 topic hz` for ROS2 publish rate.
 
-# [PC-1] Measure latency to PC-2
-ros2 topic delay /network_test_reverse
-# This shows the difference between send timestamp and receive timestamp
-# Target: < 5ms on same WiFi network
+```bash
+# [PC-1] Measure network round-trip latency to PC-2
+ping -c 20 <PC2_IP>
+# Target: < 5ms average on same WiFi network
 # Acceptable: < 20ms
 # Problematic: > 50ms (check router, interference, distance)
+```
+
+```bash
+# [PC-1] Verify ROS2 message rate from PC-2
+ros2 topic hz /network_test_reverse
+# Should show ~1.0 Hz (matching the --rate 1 publisher on PC-2)
 ```
 
 ### 3.4 Explicit ROS_DOMAIN_ID Verification (Cross-PC)
