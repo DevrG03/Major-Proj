@@ -425,7 +425,7 @@ make px4_sitl
 ```bash
 # [PC-1] Test single drone launch (just verifies it builds and runs)
 # This will open Gazebo — close it after you see the drone
-make px4_sitl gz_x500
+make px4_sitl gz_x500_mono_cam
 # After Gazebo opens and drone appears, press Ctrl+C to stop
 ```
 
@@ -741,7 +741,7 @@ Open 3 terminals on PC-1:
 ```bash
 # [PC-1 T1]
 cd ~/PX4-Autopilot
-make px4_sitl gz_x500
+make px4_sitl gz_x500_mono_cam
 # Wait until you see: INFO [commander] Ready for takeoff!
 # Gazebo should open showing one drone
 ```
@@ -896,7 +896,7 @@ tmux new-session -s sitl
 # [PC-1 T1]
 cd ~/PX4-Autopilot
 PX4_SYS_AUTOSTART=4001 \
-PX4_GZ_MODEL=x500 \
+PX4_GZ_MODEL=x500_mono_cam \
 PX4_GZ_MODEL_POSE="0,0,0,0,0,0" \
 PX4_UXRCE_DDS_KEY=1 \
 ./build/px4_sitl_default/bin/px4 -i 0 -d
@@ -909,7 +909,7 @@ PX4_UXRCE_DDS_KEY=1 \
 # [PC-1 T2] After Drone-0 is ready (about 10 seconds after T1):
 cd ~/PX4-Autopilot
 PX4_SYS_AUTOSTART=4001 \
-PX4_GZ_MODEL=x500 \
+PX4_GZ_MODEL=x500_mono_cam \
 PX4_GZ_MODEL_POSE="5,0,0,0,0,0" \
 PX4_UXRCE_DDS_KEY=2 \
 ./build/px4_sitl_default/bin/px4 -i 1 -d
