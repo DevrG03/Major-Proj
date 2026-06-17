@@ -437,13 +437,20 @@ ls ~/PX4-Autopilot/build/px4_sitl_default/bin/px4
 
 ### 1.12 Build MicroXRCE-DDS Agent
 
+> **GCC 15 note:** Building without `-fno-stack-protector` causes "stack smashing detected" at runtime on Ubuntu 26.04. Always use the flags below.
+
 ```bash
 # [PC-1]
 cd ~
 git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
 cd Micro-XRCE-DDS-Agent
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_FLAGS="-fno-stack-protector -D_FORTIFY_SOURCE=0" \
+  -DCMAKE_C_FLAGS="-fno-stack-protector -D_FORTIFY_SOURCE=0"
+
 make -j$(nproc)
 sudo make install
 sudo ldconfig
@@ -593,12 +600,17 @@ sudo systemctl restart ollama
 ### 2.10 MicroXRCE-DDS Agent on PC-2
 
 ```bash
-# [PC-2] Same as PC-1 step 1.12
+# [PC-2] Same as PC-1 step 1.12 — GCC 15 flags required
 cd ~
 git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
 cd Micro-XRCE-DDS-Agent
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_FLAGS="-fno-stack-protector -D_FORTIFY_SOURCE=0" \
+  -DCMAKE_C_FLAGS="-fno-stack-protector -D_FORTIFY_SOURCE=0"
+
 make -j$(nproc)
 sudo make install
 sudo ldconfig
@@ -688,9 +700,11 @@ ros2 topic echo /network_test_reverse
 ```bash
 # [PC-1] Measure network round-trip latency to PC-2
 ping -c 20 <PC2_IP>
-# Target: < 5ms average on same WiFi network
-# Acceptable: < 20ms
-# Problematic: > 50ms (check router, interference, distance)
+# Excellent: < 5ms (Ethernet or 5GHz WiFi close to router)
+# Good:      5–20ms (5GHz WiFi)
+# Acceptable: 20–100ms (2.4GHz WiFi) — fine for this project since
+#             Ollama inference (500-2000ms) dominates the command loop
+# Problematic: > 100ms or packet loss > 1% (check router/interference)
 ```
 
 ```bash
