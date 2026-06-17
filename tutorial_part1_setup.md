@@ -410,9 +410,15 @@ sudo apt install -y ros-lyrical-ros-gz-bridge ros-lyrical-ros-gz-sim
 
 ### 1.11 Build PX4 SITL
 
+> **GCC 15 note:** Ubuntu 26.04 ships GCC 15.2.0 which has stricter `-Wmaybe-uninitialized` checks that trigger false positives in PX4's Gz plugins. The build will fail at `SpacecraftThrusterModel.cpp` / `GenericMotorModel.cpp` without the workaround below.
+
 ```bash
 # [PC-1] First build (takes 10-20 minutes on first run)
 cd ~/PX4-Autopilot
+
+# Demote the GCC 15 false-positive warning from error to warning
+cmake build/px4_sitl_default -DCMAKE_CXX_FLAGS="-Wno-error=maybe-uninitialized"
+
 make px4_sitl
 ```
 
