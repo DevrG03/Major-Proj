@@ -385,7 +385,9 @@ bash Tools/setup/ubuntu.sh --no-nuttx
 source ~/.bashrc
 ```
 
-### 1.10 Install Gazebo Harmonic
+### 1.10 Install Gazebo Ionic
+
+> Ubuntu 26.04 (Resolute) ships with **Gazebo Ionic**. `gz-harmonic` is only available for 22.04/24.04 and will not be found on 26.04.
 
 ```bash
 # [PC-1] Add Gazebo apt repository
@@ -399,17 +401,18 @@ echo "deb [arch=$(dpkg --print-architecture) \
   | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
 
 sudo apt update
-sudo apt install -y gz-harmonic
+sudo apt install -y gz-ionic
 ```
 
-> **Note:** If `gz-harmonic` conflicts with Ubuntu 26.04, try `gz-ionic`.
-> Check: `apt-cache search "^gz-"` to see what's available.
-> PX4 will tell you which Gazebo version it needs when you try to build.
+```bash
+# [PC-1] Install ROS2-Gazebo bridge for Ionic
+sudo apt install -y ros-lyrical-ros-gz-bridge ros-lyrical-ros-gz-sim
+```
 
 ```bash
 # [PC-1] Verify Gazebo
 gz sim --version
-# Should show version number
+# Should show: Gazebo Ionic x.x.x
 ```
 
 ### 1.11 Build PX4 SITL
