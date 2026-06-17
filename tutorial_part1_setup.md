@@ -566,8 +566,9 @@ source ~/.bashrc
 ```
 
 ```bash
-# [PC-2] Build PX4 SITL
+# [PC-2] Build PX4 SITL (same GCC 15 workaround as PC-1)
 cd ~/PX4-Autopilot
+cmake build/px4_sitl_default -DCMAKE_CXX_FLAGS="-Wno-error=maybe-uninitialized"
 make px4_sitl
 ```
 
