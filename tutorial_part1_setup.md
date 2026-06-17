@@ -385,34 +385,27 @@ bash Tools/setup/ubuntu.sh --no-nuttx
 source ~/.bashrc
 ```
 
-### 1.10 Install Gazebo Ionic
+### 1.10 Install Gazebo
 
-> Ubuntu 26.04 (Resolute) ships with **Gazebo Ionic**. `gz-harmonic` is only available for 22.04/24.04 and will not be found on 26.04.
-
-```bash
-# [PC-1] Add Gazebo apt repository
-sudo curl https://packages.osrfoundation.org/gazebo.gpg \
-  --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
-
-echo "deb [arch=$(dpkg --print-architecture) \
-  signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] \
-  http://packages.osrfoundation.org/gazebo/ubuntu-stable \
-  $(lsb_release -cs) main" \
-  | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
-
-sudo apt update
-sudo apt install -y gz-ionic
-```
+> On Ubuntu 26.04 (Resolute), the OSRF apt repo does not yet have pre-built Gazebo packages. **Do not try `gz-harmonic` or `gz-ionic` via apt — they will not be found.**
+> Instead, PX4's own setup script installs Gazebo automatically. Run it and let it handle Gazebo.
 
 ```bash
-# [PC-1] Install ROS2-Gazebo bridge for Ionic
-sudo apt install -y ros-lyrical-ros-gz-bridge ros-lyrical-ros-gz-sim
+# [PC-1] PX4 setup script — installs Gazebo Jetty (gz-sim 10.x) automatically
+cd ~/PX4-Autopilot
+bash Tools/setup/ubuntu.sh --no-nuttx
+source ~/.bashrc
 ```
 
 ```bash
 # [PC-1] Verify Gazebo
 gz sim --version
-# Should show: Gazebo Ionic x.x.x
+# Should show: 10.x.x  (Gazebo Jetty)
+```
+
+```bash
+# [PC-1] Install ROS2-Gazebo bridge
+sudo apt install -y ros-lyrical-ros-gz-bridge ros-lyrical-ros-gz-sim
 ```
 
 ### 1.11 Build PX4 SITL
