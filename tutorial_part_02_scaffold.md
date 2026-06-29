@@ -375,6 +375,7 @@ setup(
             'wingman_camera_detection = major_project.wingman_pilot.wingman_camera_detection_node:main',
             'wingman_sensor_aggregator = major_project.wingman_pilot.wingman_sensor_aggregator_node:main',
             'wingman_px4_commander = major_project.wingman_pilot.wingman_px4_commander_node:main',
+            'wingman_intent_bridge = major_project.wingman_pilot.wingman_intent_bridge_node:main',
             'wingman_agent = major_project.wingman_pilot.wingman_agent_node:main',
         ],
     },
@@ -413,6 +414,7 @@ All entry points:
             'wingman_camera_detection = major_project.wingman_pilot.wingman_camera_detection_node:main',
             'wingman_sensor_aggregator = major_project.wingman_pilot.wingman_sensor_aggregator_node:main',
             'wingman_px4_commander = major_project.wingman_pilot.wingman_px4_commander_node:main',
+            'wingman_intent_bridge = major_project.wingman_pilot.wingman_intent_bridge_node:main',
             'wingman_agent = major_project.wingman_pilot.wingman_agent_node:main',
 ```
 
@@ -468,6 +470,7 @@ entry_points=(
   "wingman_camera_detection"
   "wingman_sensor_aggregator"
   "wingman_px4_commander"
+  "wingman_intent_bridge"
   "wingman_agent"
 )
 

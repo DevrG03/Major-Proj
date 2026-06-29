@@ -278,6 +278,13 @@ def generate_launch_description():
         # ── Execution layer ───────────────────────────────────────────────────
         Node(
             package="major_project",
+            executable="wingman_intent_bridge",
+            name="wingman_intent_bridge_node",
+            parameters=[cfg],
+            output="screen",
+        ),
+        Node(
+            package="major_project",
             executable="wingman_px4_commander",
             name="wingman_px4_commander_node",
             parameters=[cfg],
@@ -326,8 +333,8 @@ major_project safety_monitor
 major_project stt_node
 major_project wingman_agent
 major_project wingman_camera_detection
+major_project wingman_intent_bridge
 major_project wingman_px4_commander
-major_project wingman_sensor_aggregator
 major_project wingman_sensor_aggregator
 ```
 

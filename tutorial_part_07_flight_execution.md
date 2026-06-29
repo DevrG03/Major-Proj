@@ -7,6 +7,7 @@ This part covers the three nodes that translate approved intents into PX4 comman
 | `LeadPX4CommanderNode` | `lead_pilot/lead_px4_commander_node.py` | Executes flight commands for Lead (Drone-0) |
 | `WingmanPX4CommanderNode` | `wingman_pilot/wingman_px4_commander_node.py` | Executes flight commands for Wingman (Drone-1), includes `follow_lead` |
 | `LeadIntentBridgeNode` | `lead_pilot/lead_intent_bridge_node.py` | Dispatches chained FlightIntent `then` steps for Lead |
+| `WingmanIntentBridgeNode` | `wingman_pilot/wingman_intent_bridge_node.py` | Dispatches chained FlightIntent `then` steps for Wingman |
 
 ---
 
@@ -1336,6 +1337,215 @@ EOF
 
 ---
 
+## 7.5b `WingmanIntentBridgeNode`
+
+**File:** `major_project/wingman_pilot/wingman_intent_bridge_node.py`
+
+### Purpose
+
+Symmetric counterpart to `LeadIntentBridgeNode` for Drone-1. Listens on `/wingman/approved_intent` and chains `then` steps for the Wingman — enabling the Wingman Agent to issue multi-step sequences (e.g., `takeoff → move → search`) in a single `FlightIntent` payload.
+
+### Complete implementation
+
+```bash
+cat << 'EOF' > ~/major_ws/src/major_project/major_project/wingman_pilot/wingman_intent_bridge_node.py
+#!/usr/bin/env python3
+"""
+wingman_intent_bridge_node.py
+Handles chained FlightIntent 'then' field for the Wingman drone.
+
+Subscribes to /wingman/approved_intent.
+After chain_delay_sec (default 6.0s), republishes the 'then' step with
+a __bridge_dispatched__ marker to prevent echo loops.
+
+The WingmanPX4CommanderNode ignores any intent with __bridge_dispatched__ = True
+when processing from its own subscription (bridge echo prevention).
+Instead, the bridge publishes the chained step as a new intent that the
+commander picks up as a fresh command.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from typing import Optional
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+
+from std_msgs.msg import String
+
+# ---------------------------------------------------------------------------
+# QoS
+# ---------------------------------------------------------------------------
+
+RELIABLE_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
+
+class WingmanIntentBridgeNode(Node):
+    """
+    Chains sequential FlightIntent steps for the Wingman drone.
+
+    When an approved intent arrives with a 'then' key, the bridge waits
+    chain_delay_sec seconds and then publishes the chained intent back
+    to /wingman/approved_intent so the commander picks it up.
+
+    The __bridge_dispatched__ flag is set on the republished message so
+    the bridge itself ignores it (breaking the echo loop).
+    """
+
+    def __init__(self) -> None:
+        super().__init__("wingman_intent_bridge_node")
+
+        self.declare_parameter("chain_delay_sec", 6.0)
+        self._chain_delay: float = (
+            self.get_parameter("chain_delay_sec")
+            .get_parameter_value()
+            .double_value
+        )
+
+        # Track pending chain timer so we can cancel if a new intent arrives
+        self._pending_timer: Optional[threading.Timer] = None
+        self._pending_timer_lock = threading.Lock()
+
+        # ------------------------------------------------------------------ #
+        # Publisher / Subscriber on same topic
+        # ------------------------------------------------------------------ #
+        self._pub = self.create_publisher(
+            String, "/wingman/approved_intent", RELIABLE_QOS
+        )
+        self.create_subscription(
+            String,
+            "/wingman/approved_intent",
+            self._on_intent,
+            RELIABLE_QOS,
+        )
+
+        self.get_logger().info(
+            f"WingmanIntentBridgeNode started (chain_delay={self._chain_delay}s)."
+        )
+
+    def _on_intent(self, msg: String) -> None:
+        raw = msg.data.strip()
+        if not raw:
+            return
+
+        try:
+            intent = json.loads(raw)
+        except json.JSONDecodeError:
+            return  # Ignore malformed messages
+
+        # Ignore messages that were dispatched by the bridge itself
+        if intent.get("__bridge_dispatched__"):
+            return
+
+        # Cancel any pending chain (new intent supersedes previous chain)
+        self._cancel_pending()
+
+        then_step = intent.get("then")
+        if not then_step:
+            return  # No chained step
+
+        if not isinstance(then_step, dict):
+            self.get_logger().warning(
+                f"'then' field is not a dict — ignoring: {then_step!r}"
+            )
+            return
+
+        action = str(intent.get("action", "unknown"))
+        then_action = str(then_step.get("action", "unknown"))
+        self.get_logger().info(
+            f"Bridge: will dispatch '{then_action}' "
+            f"after '{action}' in {self._chain_delay}s."
+        )
+
+        # Shallow copy + mark as bridge-dispatched to prevent echo loop
+        chained = dict(then_step)
+        chained["__bridge_dispatched__"] = True
+
+        # Remove any nested 'then' from the chained step — the bridge will
+        # handle multi-step chains by recursion: the published chained intent
+        # itself may have a 'then', which will be picked up on the next cycle
+        # UNLESS it carries __bridge_dispatched__ which would block recursion.
+        # Solution: re-publish WITHOUT __bridge_dispatched__ but WITH the
+        # nested 'then', letting the bridge process it naturally.
+        # We strip __bridge_dispatched__ from the published payload only when
+        # a nested 'then' exists so the bridge can chain further.
+        nested_then = chained.pop("then", None)
+
+        def _dispatch() -> None:
+            payload = dict(chained)
+            # If there's a deeper chain, republish without the bridge marker
+            # so the bridge processes it again
+            if nested_then is not None:
+                payload.pop("__bridge_dispatched__", None)
+                payload["then"] = nested_then
+
+            out = String()
+            out.data = json.dumps(payload)
+            self._pub.publish(out)
+            self.get_logger().info(
+                f"Bridge dispatched chained action: {payload.get('action')}"
+            )
+
+        timer = threading.Timer(self._chain_delay, _dispatch)
+        with self._pending_timer_lock:
+            self._pending_timer = timer
+        timer.daemon = True
+        timer.start()
+
+    def _cancel_pending(self) -> None:
+        """Cancel any in-flight chain timer."""
+        with self._pending_timer_lock:
+            if self._pending_timer is not None:
+                self._pending_timer.cancel()
+                self._pending_timer = None
+
+    def destroy_node(self) -> None:
+        self._cancel_pending()
+        super().destroy_node()
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = WingmanIntentBridgeNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
+EOF
+```
+
+> [!NOTE]
+> **Symmetric design**: `WingmanIntentBridgeNode` is intentionally identical in logic to `LeadIntentBridgeNode`, only differing in the topic `/wingman/approved_intent` and node name `wingman_intent_bridge_node`. Both bridges run independently on their respective machines (PC-1 for Lead, PC-2 for Wingman), so multi-step chains execute correctly without cross-machine coupling.
+
+---
+
 ## 7.6 Build and Verification
 
 ```bash
@@ -1344,19 +1554,20 @@ colcon build --packages-select major_project --symlink-install 2>&1 | tail -5
 source install/setup.bash
 
 # Verify entry points registered
-ros2 pkg executables major_project | grep commander
+ros2 pkg executables major_project | grep -E 'commander|intent_bridge'
 # Expected:
 #   major_project lead_px4_commander
 #   major_project lead_intent_bridge
 #   major_project wingman_px4_commander
+#   major_project wingman_intent_bridge
 ```
 
 ## 7.7 Topic Summary — Flight Execution Layer
 
 | Topic | Msg Type | QoS | Flow |
 |-------|----------|-----|------|
-| `/lead/approved_intent` | String (JSON) | RELIABLE | SLM → LeadCommander, Bridge |
-| `/wingman/approved_intent` | String (JSON) | RELIABLE | SLM → WingmanCommander |
+| `/lead/approved_intent` | String (JSON) | RELIABLE | SLM → LeadCommander, LeadBridge |
+| `/wingman/approved_intent` | String (JSON) | RELIABLE | SLM → WingmanCommander, WingmanBridge |
 | `/fmu/in/offboard_control_mode` | OffboardControlMode | RELIABLE | LeadCommander → PX4-0 |
 | `/fmu/in/trajectory_setpoint` | TrajectorySetpoint | RELIABLE | LeadCommander → PX4-0 |
 | `/fmu/in/vehicle_command` | VehicleCommand | RELIABLE | LeadCommander → PX4-0 |
