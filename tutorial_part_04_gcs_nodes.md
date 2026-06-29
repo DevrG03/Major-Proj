@@ -838,7 +838,7 @@ class EmergencyStopNode(Node):
         text = msg.data.strip().lower()
         for trigger in VOICE_TRIGGERS:
             if trigger in text:
-                self.get_logger().warn(
+                self.get_logger().warning(
                     f"Voice emergency trigger detected: '{text}' matched '{trigger}'"
                 )
                 self._fire_emergency_stop(source="VOICE")
@@ -851,7 +851,7 @@ class EmergencyStopNode(Node):
         for line in sys.stdin:
             cmd = line.strip().upper()
             if cmd in KEYBOARD_TRIGGERS:
-                self.get_logger().warn(
+                self.get_logger().warning(
                     f"Keyboard emergency trigger: '{cmd}'"
                 )
                 self._fire_emergency_stop(source=f"KEYBOARD:{cmd}")
@@ -865,7 +865,7 @@ class EmergencyStopNode(Node):
             self._triggered = True
 
         if already_triggered:
-            self.get_logger().warn("Emergency stop already triggered — re-publishing.")
+            self.get_logger().warning("Emergency stop already triggered — re-publishing.")
 
         msg = Bool()
         msg.data = True
