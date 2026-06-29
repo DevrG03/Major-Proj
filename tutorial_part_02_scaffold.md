@@ -353,7 +353,9 @@ setup(
     maintainer_email='student@university.edu',
     description='Autonomous two-drone swarm system with LLM agent coordination.',
     license='MIT',
-    tests_require=['pytest'],
+    extras_require={
+        'test': ['pytest'],
+    },
     entry_points={
         'console_scripts': [
             # -- Ground Control Station (GCS) nodes -------------------------
