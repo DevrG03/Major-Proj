@@ -164,7 +164,7 @@ class STTNode(Node):
             )
             self._start_microphone_thread()
         else:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 "STTNode: sounddevice or Whisper unavailable — "
                 "falling back to stdin polling. Type commands and press Enter."
             )
