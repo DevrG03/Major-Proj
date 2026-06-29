@@ -1246,23 +1246,45 @@ for p in nodes:
 sys.exit(0 if ok else 1)
 "
 
-# ── Run nodes ──────────────────────────────────────────────────────────────
+# ── Run nodes (each in its own terminal) ───────────────────────────────────
+# Source first in every terminal
 source /opt/ros/lyrical/setup.bash
 source ~/major_ws/install/setup.bash
 
+# Terminal 1
 ros2 run major_project stt_node
+# Terminal 2
 ros2 run major_project clarification_speaker
+# Terminal 3
 ros2 run major_project mission_monitor
+# Terminal 4
 ros2 run major_project emergency_stop
+# Terminal 5
 ros2 run major_project diagnostics
 
-# ── Manual tests ───────────────────────────────────────────────────────────
-ros2 topic pub --once /clarification_request std_msgs/String \
+# ── Manual tests (run in a 6th terminal) ───────────────────────────────────
+#
+# IMPORTANT: All GCS nodes use RELIABLE + TRANSIENT_LOCAL QoS.
+# ros2 topic pub defaults to VOLATILE durability which is INCOMPATIBLE —
+# you will see "waiting for at least one matching subscription(s)" if you
+# omit the QoS flags below. Always pass both flags when testing these topics.
+#
+
+# Test clarification speaker (should speak the text aloud via espeak-ng)
+ros2 topic pub --once \
+  --qos-durability transient_local \
+  --qos-reliability reliable \
+  /clarification_request std_msgs/String \
   '{"data": "Did you mean: patrol the north perimeter or return to base?"}'
 
-ros2 topic pub --once /voice_commands std_msgs/String \
+# Test emergency stop (should trigger EStop node to publish Bool True x5)
+ros2 topic pub --once \
+  --qos-durability transient_local \
+  --qos-reliability reliable \
+  /voice_commands std_msgs/String \
   '{"data": "emergency stop all drones"}'
 
+# Verify the emergency_stop topic received the Bool message
 ros2 topic echo /emergency_stop
 
 ros2 topic echo /system/health | python3 -c "
