@@ -147,11 +147,20 @@ Fix #5 — SLM Health Monitor (Loophole #5):
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import json
 import os
 import re
 import threading
 import time
+
+# QoS matching the LeadIntentBridgeNode and GCS nodes
+RELIABLE_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -190,7 +199,7 @@ class LeadAgentNode(Node):
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen2.5-coder:3b')
-        self.declare_parameter('num_ctx', 2048)
+        self.declare_parameter('num_ctx', 3072)  # raised: 2048 too small for STANDBY loop
 
         host    = self.get_parameter('ollama_host').value
         port    = self.get_parameter('ollama_port').value
@@ -233,14 +242,16 @@ class LeadAgentNode(Node):
         self.tools        = LeadToolRegistry(self)
 
         # ── Publishers ────────────────────────────────────────────
+        # RELIABLE_QOS (TRANSIENT_LOCAL) must match intent bridge + GCS subscribers
         self.pub_intent         = self.create_publisher(
-            String, '/lead/approved_intent', 10)
+            String, '/lead/approved_intent', RELIABLE_QOS)
+        self.pub_clarification  = self.create_publisher(
+            String, '/clarification_request', RELIABLE_QOS)
+        self.pub_mission_status = self.create_publisher(
+            String, '/mission_status', RELIABLE_QOS)
+        # Volatile OK — agent/health and wingman comms use depth=10 on both sides
         self.pub_wingman_msg    = self.create_publisher(
             String, '/agent/lead_to_wingman', 10)
-        self.pub_clarification  = self.create_publisher(
-            String, '/clarification_request', 10)
-        self.pub_mission_status = self.create_publisher(
-            String, '/mission_status', 10)
         self.pub_health         = self.create_publisher(
             String, '/agent/health', 10)
 
@@ -416,8 +427,18 @@ class LeadAgentNode(Node):
             if self._abort_event.is_set():
                 break
 
-            # ── Step 4: Build prompt and run SLM inference ───────────
-            prompt = self.ctx.build_prompt()
+            # ── Step 4: Guard context size, then run SLM inference ────────
+            # If prompt > 75% of num_ctx (chars estimated at ~3.5 chars/token),
+            # auto-compress history to prevent context overflow that causes
+            # the model to output garbage JSON.
+            prompt    = self.ctx.build_prompt()
+            ctx_chars = int(num_ctx * 3.5 * 0.75)
+            if len(prompt) > ctx_chars:
+                self.ctx.compress_history()
+                prompt = self.ctx.build_prompt()
+                self.get_logger().info(
+                    f"Context compressed ({len(prompt)} chars > {ctx_chars} budget).")
+
             tool_name, params = self._infer_tool_call(prompt)
 
             # ── Step 5: Handle SLM failure ───────────────────────────

@@ -127,11 +127,20 @@ Loophole Fixes Applied:
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import json
 import os
 import re
 import threading
 import time
+
+# QoS matching the WingmanIntentBridgeNode and monitor subscribers
+RELIABLE_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -211,12 +220,14 @@ class WingmanAgentNode(Node):
         self.tools        = WingmanToolRegistry(self)
 
         # ── Publishers ────────────────────────────────────────────
+        # RELIABLE_QOS must match WingmanIntentBridgeNode + monitor subscribers
         self.pub_intent         = self.create_publisher(
-            String, '/wingman/approved_intent', 10)
+            String, '/wingman/approved_intent', RELIABLE_QOS)
+        self.pub_status_report  = self.create_publisher(
+            String, '/wingman/status_report_text', RELIABLE_QOS)
+        # Volatile OK — agent/health and lead comms use depth=10 on both sides
         self.pub_lead_msg       = self.create_publisher(
             String, '/agent/wingman_to_lead', 10)
-        self.pub_status_report  = self.create_publisher(
-            String, '/wingman/status_report_text', 10)
         self.pub_health         = self.create_publisher(
             String, '/agent/health', 10)
 
