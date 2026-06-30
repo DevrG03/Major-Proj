@@ -854,8 +854,11 @@ EOF
 # ── Install vision dependencies ────────────────────────────────────────────────
 pip install ultralytics opencv-python-headless numpy
 
-# ROS cv_bridge (needed for sensor_msgs/Image conversion)
-sudo apt install -y ros-humble-cv-bridge python3-cv-bridge
+# ROS cv_bridge — install for ROS2 Lyrical (NOT humble)
+# Note: this was already declared in package.xml (Part 2) so may already be installed.
+# ros-lyrical-vision-opencv includes both cv_bridge and image_geometry.
+sudo apt update
+sudo apt install -y ros-lyrical-cv-bridge ros-lyrical-vision-opencv
 
 # ── Build both packages ────────────────────────────────────────────────────────
 cd ~/major_ws
