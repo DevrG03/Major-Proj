@@ -884,20 +884,24 @@ sys.exit(0 if ok else 1)
 "
 
 # ── Run nodes ─────────────────────────────────────────────────────────────────
-# Terminal A: Lead camera (primary Image mode)
-ros2 run major_project camera_detection_node \
+# NOTE: The executable name is the entry point key from setup.py, NOT the filename.
+#   setup.py: 'camera_detection = ...camera_detection_node:main'
+#   → ros2 run major_project camera_detection   (no _node suffix)
+
+# Terminal A: Lead camera (primary Image mode — waits for Gazebo /camera/image_raw)
+ros2 run major_project camera_detection \
   --ros-args -p image_topic:=/camera/image_raw -p publish_rate_hz:=2.0
 
-# Terminal B: Lead camera (USB fallback mode)
-ros2 run major_project camera_detection_node \
+# Terminal B: Lead camera (USB fallback mode — uses physical webcam)
+ros2 run major_project camera_detection \
   --ros-args -p use_usb_camera:=true -p camera_index:=0
 
 # Terminal C: Wingman camera (primary Image mode)
-ros2 run major_project wingman_camera_detection_node \
+ros2 run major_project wingman_camera_detection \
   --ros-args -p image_topic:=/px4_1/camera/image_raw -p publish_rate_hz:=2.0
 
 # Terminal D: Wingman camera (USB fallback)
-ros2 run major_project wingman_camera_detection_node \
+ros2 run major_project wingman_camera_detection \
   --ros-args -p use_usb_camera:=true -p camera_index:=1
 
 # ── Monitor detection outputs ─────────────────────────────────────────────────
