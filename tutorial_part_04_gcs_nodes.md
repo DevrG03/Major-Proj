@@ -345,7 +345,7 @@ class ClarificationSpeakerNode(Node):
         if self._espeak_available:
             self.get_logger().info("espeak-ng found — TTS enabled.")
         else:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 "espeak-ng not found — audio output disabled. "
                 "Install with: sudo apt-get install -y espeak-ng"
             )
@@ -428,7 +428,7 @@ class ClarificationSpeakerNode(Node):
                 capture_output=True,
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-            self.get_logger().warn(f"espeak-ng error: {exc}")
+            self.get_logger().warning(f"espeak-ng error: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -578,7 +578,7 @@ class MissionMonitorNode(Node):
             self._live_thread.start()
             self.get_logger().info("MissionMonitorNode: rich dashboard started.")
         else:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 "rich not installed — plain text mode. pip install rich"
             )
             self._plain_timer = self.create_timer(

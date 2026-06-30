@@ -289,7 +289,7 @@ class LeadCameraDetectionNode(Node):
             except Exception as exc:
                 self.get_logger().error(f"Failed to load YOLO model: {exc}")
         else:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 "ultralytics/cv2 not installed — publishing empty detections. "
                 "pip install ultralytics opencv-python-headless"
             )
@@ -336,7 +336,7 @@ class LeadCameraDetectionNode(Node):
         try:
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as exc:
-            self.get_logger().warn(f"cv_bridge conversion error: {exc}")
+            self.get_logger().warning(f"cv_bridge conversion error: {exc}")
             return
 
         # Run inference in a thread to avoid blocking the executor
@@ -382,7 +382,7 @@ class LeadCameraDetectionNode(Node):
         while rclpy.ok():
             ret, frame = cap.read()
             if not ret:
-                self.get_logger().warn("USB camera read failed — retrying …")
+                self.get_logger().warning("USB camera read failed — retrying …")
                 time.sleep(0.1)
                 continue
             # Drop old frame if queue is full (keep latest)
@@ -420,7 +420,7 @@ class LeadCameraDetectionNode(Node):
                     self._obstacle_labels,
                 )
             except Exception as exc:
-                self.get_logger().warn(f"YOLO inference error: {exc}")
+                self.get_logger().warning(f"YOLO inference error: {exc}")
                 det_text, vec_text = "", ""
         else:
             det_text, vec_text = "", ""
@@ -681,7 +681,7 @@ class WingmanCameraDetectionNode(Node):
             except Exception as exc:
                 self.get_logger().error(f"Failed to load YOLO model: {exc}")
         else:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 "ultralytics/cv2 not installed — publishing empty detections. "
                 "pip install ultralytics opencv-python-headless"
             )
@@ -728,7 +728,7 @@ class WingmanCameraDetectionNode(Node):
         try:
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as exc:
-            self.get_logger().warn(f"cv_bridge conversion error: {exc}")
+            self.get_logger().warning(f"cv_bridge conversion error: {exc}")
             return
 
         # Run inference off the executor thread
@@ -773,7 +773,7 @@ class WingmanCameraDetectionNode(Node):
         while rclpy.ok():
             ret, frame = cap.read()
             if not ret:
-                self.get_logger().warn("USB camera read failed — retrying …")
+                self.get_logger().warning("USB camera read failed — retrying …")
                 time.sleep(0.1)
                 continue
             # Always keep only the latest frame
@@ -811,7 +811,7 @@ class WingmanCameraDetectionNode(Node):
                     self._obstacle_labels,
                 )
             except Exception as exc:
-                self.get_logger().warn(f"YOLO inference error: {exc}")
+                self.get_logger().warning(f"YOLO inference error: {exc}")
                 det_text, vec_text = "", ""
         else:
             det_text, vec_text = "", ""

@@ -300,7 +300,7 @@ class WingmanAgentNode(Node):
         except Exception:
             note = msg.data
         self.ctx.add_memory_note(f"[SAFETY] {note}")
-        self.get_logger().warn(f"Safety event: {note[:100]}")
+        self.get_logger().warning(f"Safety event: {note[:100]}")
 
     # ════════════════════════════════════════════════════════════════
     # Goal Assignment (Fix #4 — safe replacement with abort event)
@@ -357,7 +357,7 @@ class WingmanAgentNode(Node):
                         self.ctx.add_memory_note(
                             "[LEAD TIMEOUT] No response after 60s. "
                             "Proceeding with best judgment.")
-                        self.get_logger().warn(
+                        self.get_logger().warning(
                             "Lead response timeout — continuing autonomously")
                     else:
                         sit = self.tools.execute('get_situation', {})

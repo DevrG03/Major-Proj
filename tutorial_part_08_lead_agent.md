@@ -332,7 +332,7 @@ class LeadAgentNode(Node):
         except Exception:
             note = msg.data
         self.ctx.add_memory_note(f"[SAFETY] {note}")
-        self.get_logger().warn(f"Safety event: {note[:100]}")
+        self.get_logger().warning(f"Safety event: {note[:100]}")
 
     # ════════════════════════════════════════════════════════════════
     # Goal Assignment (Fix #4 — safe replacement with abort event)
@@ -394,7 +394,7 @@ class LeadAgentNode(Node):
                         self.ctx.add_memory_note(
                             "[HUMAN TIMEOUT] No response after 120s. "
                             "Proceeding with best judgment.")
-                        self.get_logger().warn(
+                        self.get_logger().warning(
                             "Human response timeout — continuing autonomously")
                     else:
                         # Get situation, then wait 3s before checking again
