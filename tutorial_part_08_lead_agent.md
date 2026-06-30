@@ -204,11 +204,11 @@ class LeadAgentNode(Node):
         host    = self.get_parameter('ollama_host').value
         port    = self.get_parameter('ollama_port').value
         model   = self.get_parameter('model').value
-        num_ctx = self.get_parameter('num_ctx').value
+        self._num_ctx = self.get_parameter('num_ctx').value
 
         # ── SLM client + system prompt ─────────────────────────────
         self.ollama = OllamaClient(
-            host=host, port=port, model=model, num_ctx=num_ctx)
+            host=host, port=port, model=model, num_ctx=self._num_ctx)
         self.system_prompt = _load_prompt('lead_agent_system.txt')
 
         # ── Shared sensor state (protected by self.lock) ──────────
@@ -273,7 +273,7 @@ class LeadAgentNode(Node):
         self.create_timer(10.0, self._publish_health)
 
         self.get_logger().info(
-            f"Lead Agent ready — Ollama {host}:{port} model:{model} ctx:{num_ctx}")
+            f"Lead Agent ready — Ollama {host}:{port} model:{model} ctx:{self._num_ctx}")
 
         # ── Fix #1: Self-start with STANDBY goal ──────────────────
         self._assign_goal(
@@ -432,7 +432,7 @@ class LeadAgentNode(Node):
             # auto-compress history to prevent context overflow that causes
             # the model to output garbage JSON.
             prompt    = self.ctx.build_prompt()
-            ctx_chars = int(num_ctx * 3.5 * 0.75)
+            ctx_chars = int(self._num_ctx * 3.5 * 0.75)
             if len(prompt) > ctx_chars:
                 self.ctx.compress_history()
                 prompt = self.ctx.build_prompt()

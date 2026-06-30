@@ -180,16 +180,16 @@ class WingmanAgentNode(Node):
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen2.5-coder:3b')
-        self.declare_parameter('num_ctx', 1024)
+        self.declare_parameter('num_ctx', 2048)  # raised: 1024 too small for system prompt
 
         host    = self.get_parameter('ollama_host').value
         port    = self.get_parameter('ollama_port').value
         model   = self.get_parameter('model').value
-        num_ctx = self.get_parameter('num_ctx').value
+        self._num_ctx = self.get_parameter('num_ctx').value
 
         # ── SLM client + system prompt ─────────────────────────────
         self.ollama = OllamaClient(
-            host=host, port=port, model=model, num_ctx=num_ctx)
+            host=host, port=port, model=model, num_ctx=self._num_ctx)
         self.system_prompt = _load_prompt('wingman_agent_system.txt')
 
         # ── Shared sensor state (protected by self.lock) ──────────
@@ -247,7 +247,7 @@ class WingmanAgentNode(Node):
         self.create_timer(10.0, self._publish_health)
 
         self.get_logger().info(
-            f"Wingman Agent ready — Ollama {host}:{port} model:{model} ctx:{num_ctx}")
+            f"Wingman Agent ready — Ollama {host}:{port} model:{model} ctx:{self._num_ctx}")
 
         # ── Fix #1: Self-start with STANDBY goal ──────────────────
         self._assign_goal(
