@@ -344,6 +344,19 @@ class LeadPX4CommanderNode(Node):
     def _action_takeoff(self, intent: dict) -> None:
         alt_m = float(intent.get("altitude_m", _DEFAULT_TAKEOFF_ALT_M))
 
+        # IDEMPOTENT GUARD: if already armed and airborne, DO NOT restart the
+        # pre-arm sequence. Restarting resets _keepalive_count and triggers a
+        # new arm/OFFBOARD cycle which causes PX4's EKF to reinitialise its
+        # local frame, resetting _cur_x/_cur_y to near-zero. Any move command
+        # after this will compute wrong absolute targets (origin-relative).
+        if self._offboard_active and -self._cur_z > 1.0:
+            # Already flying — just change altitude if requested
+            self._tgt_z = -abs(alt_m)    # NED: negative = up
+            self.get_logger().info(
+                f"Takeoff received while airborne — adjusting altitude to {alt_m}m "
+                f"(no arm/OFFBOARD restart).")
+            return
+
         # Store the requested altitude — keepalive will command it AFTER arming.
         self._pending_alt_m = abs(alt_m)
 
@@ -968,6 +981,18 @@ class WingmanPX4CommanderNode(Node):
 
     def _action_takeoff(self, intent: dict) -> None:
         alt_m = float(intent.get("altitude_m", _DEFAULT_TAKEOFF_ALT_M))
+
+        # IDEMPOTENT GUARD: if already armed and airborne, skip pre-arm sequence.
+        # Same reasoning as Lead commander: restarting pre-arm resets _keepalive_count,
+        # triggers a new EKF arm cycle, and resets _cur_x/_cur_y to near-zero, causing
+        # all subsequent move commands to calculate targets from the wrong origin.
+        if self._offboard_active and -self._cur_z > 1.0:
+            self._tgt_z = -abs(alt_m)
+            self.get_logger().info(
+                f"Wingman takeoff received while airborne — adjusting altitude to {alt_m}m "
+                f"(no arm/OFFBOARD restart).")
+            return
+
         self._pending_alt_m = abs(alt_m)
         # Stay at current ground position during pre-arm streaming phase
         self._tgt_x = self._cur_x
@@ -978,6 +1003,7 @@ class WingmanPX4CommanderNode(Node):
         self._keepalive_count = 0
         self.get_logger().info(
             f"Wingman takeoff requested: {alt_m}m — entering pre-arm streaming phase.")
+
 
     def _action_move(self, intent: dict) -> None:
         direction  = str(intent.get("direction", "north")).lower()
