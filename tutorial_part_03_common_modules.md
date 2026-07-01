@@ -674,6 +674,19 @@ class BaseToolRegistry:
     # ── Flight tools ──────────────────────────────────────────────
 
     def _takeoff(self, params: dict) -> str:
+        # Programmatic Guardrail: prevent mid-air takeoff hallucination
+        with self.ros.lock:
+            sit_str = getattr(self.ros, 'own_situation', '{}')
+        try:
+            if sit_str:
+                sit_data = json.loads(sit_str)
+                z = sit_data.get('position', {}).get('z', 0.0)
+                # NED z is negative when above ground
+                if -z > 1.0:
+                    return "[ERROR] Cannot takeoff while airborne. Use move or hover instead."
+        except Exception:
+            pass
+
         altitude = float(params.get('altitude', 5.0))
         altitude = max(1.0, min(30.0, altitude))
         # Bug fix #1: publish 'altitude_m' — commander reads intent.get('altitude_m')
