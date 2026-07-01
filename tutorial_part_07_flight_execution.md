@@ -197,10 +197,13 @@ class LeadPX4CommanderNode(Node):
         self._cur_y: float = 0.0
         self._cur_z: float = 0.0          # NED: negative = up
 
-        # Target setpoint (updated by action handlers)
+        # Target setpoint — initialised to GROUND (0,0,0) not climb altitude.
+        # Bug fix: streaming a non-zero _tgt_z before takeoff causes EKF
+        # 'Altitude failure (roll)' because PX4 sees a commanded altitude it
+        # cannot reach while still on the ground.
         self._tgt_x: float = 0.0
         self._tgt_y: float = 0.0
-        self._tgt_z: float = -_DEFAULT_TAKEOFF_ALT_M   # negative = up in NED
+        self._tgt_z: float = 0.0          # NED: 0 = ground level ← FIXED
 
         # Saved setpoint for search_resume
         self._saved_x: Optional[float] = None
@@ -210,9 +213,15 @@ class LeadPX4CommanderNode(Node):
         # Search expansion state
         self._search_radius_m: float = _DEFAULT_SEARCH_RADIUS_M
 
-        # Offboard keepalive: only stream setpoints if armed/offboard active
+        # Offboard state machine
+        # PX4 requires setpoints to be streaming BEFORE the OFFBOARD switch,
+        # and the OFFBOARD switch must happen BEFORE arming.
+        # Sequence: stream ground setpoints (pre-arm) → OFFBOARD switch →
+        #           Arm → update _tgt_z to climb altitude → active flight.
         self._offboard_active: bool = False
         self._keepalive_count: int = 0
+        self._pre_arm_phase: bool = False   # True while waiting to switch OFFBOARD
+        self._pending_alt_m: float = 0.0    # climb altitude requested by takeoff
 
         # ------------------------------------------------------------------ #
         # Publishers
@@ -338,23 +347,26 @@ class LeadPX4CommanderNode(Node):
 
     def _action_takeoff(self, intent: dict) -> None:
         alt_m = float(intent.get("altitude_m", _DEFAULT_TAKEOFF_ALT_M))
+
+        # Store the requested altitude — keepalive will command it AFTER arming.
+        self._pending_alt_m = abs(alt_m)
+
+        # Keep target at CURRENT position (ground) during pre-arm streaming.
+        # Bug fix: setting _tgt_z to -alt_m here caused PX4 EKF to see an
+        # unreachable altitude setpoint before the drone is even armed,
+        # triggering 'Altitude failure (roll)' and violent pitch/roll.
         self._tgt_x = self._cur_x
         self._tgt_y = self._cur_y
-        self._tgt_z = -abs(alt_m)   # NED: negative up
+        self._tgt_z = self._cur_z          # NED: stay at ground for now
 
-        # 1. Arm
-        self._send_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
-            param1=1.0,
-        )
-        # 2. Switch to OFFBOARD
-        self._send_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
-            param1=1.0,  # MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
-            param2=6.0,  # PX4_CUSTOM_MAIN_MODE_OFFBOARD
-        )
-        self._offboard_active = True
-        self.get_logger().info(f"Takeoff: climbing to {alt_m}m (NED z={self._tgt_z}).")
+        # Enter pre-arm phase: keepalive will stream ground setpoints for
+        # 1 second (10 ticks @ 10Hz), then send OFFBOARD switch + Arm,
+        # then raise _tgt_z to climb altitude.
+        self._pre_arm_phase   = True
+        self._offboard_active = False      # keepalive pre-arm loop takes over
+        self._keepalive_count = 0          # reset counter for pre-arm timing
+        self.get_logger().info(
+            f"Takeoff requested: {alt_m}m — entering pre-arm streaming phase.")
 
     def _action_move(self, intent: dict) -> None:
         direction = str(intent.get("direction", "north")).lower()
@@ -474,32 +486,67 @@ class LeadPX4CommanderNode(Node):
 
     def _keepalive(self) -> None:
         """
-        PX4 OFFBOARD mode requires setpoints to be streamed at >2 Hz.
-        We stream at 10 Hz. Pre-arm streaming is needed for PX4 to accept
-        the OFFBOARD mode switch command.
+        PX4 OFFBOARD mode requires setpoints streamed at >2 Hz before the
+        OFFBOARD switch is accepted.  We use a 3-phase state machine:
+
+        Phase 0 — IDLE (_pre_arm_phase=False, _offboard_active=False):
+            Stream current ground position. No arm/mode commands.
+
+        Phase 1 — PRE-ARM (_pre_arm_phase=True, _offboard_active=False):
+            Stream ground-level setpoints for 10 ticks (1 s).
+            On tick 10: send DO_SET_MODE → OFFBOARD.
+            On tick 11: send COMPONENT_ARM_DISARM → arm.
+            On tick 12+: raise _tgt_z to climb altitude → active flight.
+
+        Phase 2 — ACTIVE (_offboard_active=True):
+            Stream _tgt_x/y/z continuously at 10 Hz.
         """
         self._keepalive_count += 1
+        now_us = int(self.get_clock().now().nanoseconds / 1000)
 
-        # Publish OffboardControlMode
+        # Always publish OffboardControlMode (PX4 needs this at >2 Hz)
         ocm = OffboardControlMode()
-        ocm.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        ocm.position = True
-        ocm.velocity = False
+        ocm.timestamp = now_us
+        ocm.position     = True
+        ocm.velocity     = False
         ocm.acceleration = False
-        ocm.attitude = False
-        ocm.body_rate = False
+        ocm.attitude     = False
+        ocm.body_rate    = False
         self._ocm_pub.publish(ocm)
 
-        if not self._offboard_active and self._keepalive_count < 50:
-            # Pre-arm: stream setpoints but don't attempt offboard switch yet
-            # (first 5 seconds of pre-arming)
-            pass
+        # ── Phase 1: pre-arm sequence ──────────────────────────────────────
+        if self._pre_arm_phase:
+            if self._keepalive_count == 10:
+                # 1 s of setpoints streamed — safe to switch OFFBOARD
+                self._send_vehicle_command(
+                    VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
+                    param1=1.0,   # MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+                    param2=6.0,   # PX4_CUSTOM_MAIN_MODE_OFFBOARD
+                )
+                self.get_logger().info("Pre-arm: OFFBOARD mode switch sent.")
 
-        # Publish TrajectorySetpoint
+            elif self._keepalive_count == 11:
+                # OFFBOARD accepted — arm the drone
+                self._send_vehicle_command(
+                    VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                    param1=1.0,
+                )
+                self.get_logger().info("Pre-arm: ARM command sent.")
+
+            elif self._keepalive_count == 13:
+                # Armed + OFFBOARD confirmed — now command the climb
+                self._tgt_z = -abs(self._pending_alt_m)   # NED: negative = up
+                self._pre_arm_phase   = False
+                self._offboard_active = True
+                self.get_logger().info(
+                    f"Takeoff: climbing to {self._pending_alt_m}m "
+                    f"(NED z={self._tgt_z:.1f}).")
+
+        # ── Publish TrajectorySetpoint ─────────────────────────────────────
         tsp = TrajectorySetpoint()
-        tsp.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        tsp.position = [self._tgt_x, self._tgt_y, self._tgt_z]
-        tsp.yaw = float("nan")          # Use float NaN to let PX4 control yaw
+        tsp.timestamp = now_us
+        tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
+        tsp.yaw       = float("nan")   # let PX4 manage yaw
         self._tsp_pub.publish(tsp)
 
     # ------------------------------------------------------------------ #
@@ -706,10 +753,10 @@ class WingmanPX4CommanderNode(Node):
         self._cur_y: float = 0.0
         self._cur_z: float = 0.0
 
-        # Target setpoint
+        # Target setpoint — initialised to GROUND, not climb altitude (same bug fix as Lead)
         self._tgt_x: float = 0.0
         self._tgt_y: float = 0.0
-        self._tgt_z: float = -_DEFAULT_TAKEOFF_ALT_M
+        self._tgt_z: float = 0.0          # NED: 0 = ground ← FIXED
 
         # Saved setpoint for search_resume
         self._saved_x: Optional[float] = None
@@ -719,9 +766,11 @@ class WingmanPX4CommanderNode(Node):
         # Search expansion state
         self._search_radius_m: float = _DEFAULT_SEARCH_RADIUS_M
 
-        # Offboard keepalive
+        # Offboard state machine (3-phase, same as Lead)
         self._offboard_active: bool = False
         self._keepalive_count: int = 0
+        self._pre_arm_phase: bool = False
+        self._pending_alt_m: float = 0.0
 
         # ------------------------------------------------------------------ #
         # State – follow_lead
@@ -909,21 +958,16 @@ class WingmanPX4CommanderNode(Node):
 
     def _action_takeoff(self, intent: dict) -> None:
         alt_m = float(intent.get("altitude_m", _DEFAULT_TAKEOFF_ALT_M))
+        self._pending_alt_m = abs(alt_m)
+        # Stay at current ground position during pre-arm streaming phase
         self._tgt_x = self._cur_x
         self._tgt_y = self._cur_y
-        self._tgt_z = -abs(alt_m)
-
-        self._send_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
-            param1=1.0,
-        )
-        self._send_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
-            param1=1.0,
-            param2=6.0,
-        )
-        self._offboard_active = True
-        self.get_logger().info(f"Wingman takeoff: {alt_m}m.")
+        self._tgt_z = self._cur_z
+        self._pre_arm_phase   = True
+        self._offboard_active = False
+        self._keepalive_count = 0
+        self.get_logger().info(
+            f"Wingman takeoff requested: {alt_m}m — entering pre-arm streaming phase.")
 
     def _action_move(self, intent: dict) -> None:
         direction = str(intent.get("direction", "north")).lower()
@@ -1044,23 +1088,47 @@ class WingmanPX4CommanderNode(Node):
     # ------------------------------------------------------------------ #
 
     def _keepalive(self) -> None:
+        """3-phase offboard keepalive — same state machine as LeadPX4CommanderNode."""
         self._keepalive_count += 1
+        now_us = int(self.get_clock().now().nanoseconds / 1000)
 
-        # Publish OffboardControlMode
         ocm = OffboardControlMode()
-        ocm.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        ocm.position = True
-        ocm.velocity = False
+        ocm.timestamp    = now_us
+        ocm.position     = True
+        ocm.velocity     = False
         ocm.acceleration = False
-        ocm.attitude = False
-        ocm.body_rate = False
+        ocm.attitude     = False
+        ocm.body_rate    = False
         self._ocm_pub.publish(ocm)
 
-        # Publish TrajectorySetpoint
+        # Phase 1: pre-arm sequence
+        if self._pre_arm_phase:
+            if self._keepalive_count == 10:
+                self._send_vehicle_command(
+                    VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
+                    param1=1.0, param2=6.0)
+                self.get_logger().info("Wingman pre-arm: OFFBOARD mode switch sent.")
+            elif self._keepalive_count == 11:
+                self._send_vehicle_command(
+                    VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                    param1=1.0)
+                self.get_logger().info("Wingman pre-arm: ARM command sent.")
+            elif self._keepalive_count == 13:
+                self._tgt_z           = -abs(self._pending_alt_m)
+                self._pre_arm_phase   = False
+                self._offboard_active = True
+                self.get_logger().info(
+                    f"Wingman takeoff: climbing to {self._pending_alt_m}m "
+                    f"(NED z={self._tgt_z:.1f}).")
+
+        # Phase 2: follow_lead updates setpoint every tick
+        if self._follow_lead_active and self._offboard_active:
+            self._update_follow_setpoint()
+
         tsp = TrajectorySetpoint()
-        tsp.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        tsp.position = [self._tgt_x, self._tgt_y, self._tgt_z]
-        tsp.yaw = float("nan")
+        tsp.timestamp = now_us
+        tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
+        tsp.yaw       = float("nan")
         self._tsp_pub.publish(tsp)
 
     # ------------------------------------------------------------------ #
