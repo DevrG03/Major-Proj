@@ -306,10 +306,6 @@ class LeadPX4CommanderNode(Node):
             self._publish_feedback(f"JSON parse error: {exc} — raw: {raw[:120]}")
             return
 
-        # Skip bridge echo-loop markers
-        if intent.get("__bridge_dispatched__"):
-            return
-
         action = str(intent.get("action", "")).lower()
         self.get_logger().info(f"Lead commander executing action: {action}")
 
@@ -925,9 +921,6 @@ class WingmanPX4CommanderNode(Node):
             intent = json.loads(raw)
         except json.JSONDecodeError as exc:
             self._publish_feedback(f"JSON parse error: {exc} — raw: {raw[:120]}")
-            return
-
-        if intent.get("__bridge_dispatched__"):
             return
 
         action = str(intent.get("action", "")).lower()

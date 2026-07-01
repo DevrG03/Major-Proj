@@ -323,7 +323,10 @@ class WingmanAgentNode(Node):
         # Signal any running loop to exit cleanly
         if self._agent_running:
             self._abort_event.set()
-            time.sleep(0.15)
+            # Wait for the previous thread to actually finish executing and exit
+            self.get_logger().info("Waiting for old agent thread to exit...")
+            while self._agent_running:
+                time.sleep(0.05)
 
         # Reset state for new goal
         self._abort_event.clear()
