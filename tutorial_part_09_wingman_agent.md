@@ -412,8 +412,16 @@ class WingmanAgentNode(Node):
 
             # ── Step 5.5: ECSM Critic Guardrail ──────────────────────
             fsm_state = "GROUND"
-            if self.ctx.situation and "ARMED" in self.ctx.situation:
-                fsm_state = "AIRBORNE"
+            if self.ctx.situation:
+                if "DISARMED" in self.ctx.situation:
+                    fsm_state = "GROUND"
+                elif "ARMED" in self.ctx.situation:
+                    try:
+                        alt_str = self.ctx.situation.split("alt:")[1].split("m")[0]
+                        if float(alt_str) > 1.0:
+                            fsm_state = "AIRBORNE"
+                    except Exception:
+                        pass
 
             if fsm_state == "AIRBORNE" and tool_name == "takeoff":
                 self.get_logger().warning("ECSM CRITIC BLOCKED: illegal 'takeoff' while AIRBORNE.")

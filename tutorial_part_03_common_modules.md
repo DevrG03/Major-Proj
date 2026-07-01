@@ -680,10 +680,10 @@ class BaseToolRegistry:
         self._publish_intent({
             'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
         
-        # ECSM Fix: Pause agent thread for 2.0s to allow physical pre-arm sequence 
-        # (1.3s) to complete before SLM can issue its next tool call.
+        # ECSM Fix: Pause agent thread for 4.0s to allow physical pre-arm sequence 
+        # (1.3s) and physical climb (>1.0m) to complete before SLM evaluates state.
         import time
-        time.sleep(2.0)
+        time.sleep(4.0)
         
         eta = int(altitude * 1.8) + 6
         return (
