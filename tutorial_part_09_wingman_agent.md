@@ -86,6 +86,7 @@ AGENT RULES:
 7. Use ask_lead ONLY for: safety decisions, ambiguous orders, or missing information.
 8. STANDBY goal: call get_situation(), then wait(30), repeat. Do NOT call mission_complete.
 9. If context shows PENDING_LEAD_RESPONSE: call get_situation() next, then wait(10). Repeat until [LEAD ANSWERED] appears.
+10. NEVER call rtl() autonomously unless explicitly commanded by the Lead or if battery is critically low.
 
 ══════════════════════════════════════════
 DIRECTION SHORTCUTS:
@@ -101,7 +102,7 @@ Wait for ETA →  {"tool":"wait","params":{"seconds":22}}
 Confirm alt →   {"tool":"get_situation","params":{}}
 Follow lead →   {"tool":"follow_lead","params":{"offset_m":5}}
 Wait follow →   {"tool":"wait","params":{"seconds":30}}
-RTL →           {"tool":"rtl","params":{}}
+Done →          {"tool":"mission_complete","params":{"report":"Task finished."}}
 PROMPT_EOF
 ```
 
