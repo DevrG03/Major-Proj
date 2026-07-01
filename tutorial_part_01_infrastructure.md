@@ -486,34 +486,34 @@ Kill all terminals (Ctrl+C) before proceeding.
 MicroXRCEAgent udp4 -p 8888
 ```
 
-### Terminal B — Drone-0 (Lead)
+### Terminal B — Drone-0 (Lead) — starts Gazebo + spawns camera drone
 
 ```bash
 cd ~/PX4-Autopilot
-export CC=gcc-12 CXX=g++-12
-
-PX4_SYS_AUTOSTART=4001 \
-PX4_GZ_MODEL=x500_mono_cam \
-PX4_GZ_MODEL_POSE="0,0,0,0,0,0" \
-PX4_UXRCE_DDS_KEY=1 \
-./build/px4_sitl_default/bin/px4 -i 0 -d
+CC=gcc-12 CXX=g++-12 make px4_sitl gz_x500_mono_cam
 ```
 
-### Terminal C — Drone-1 (Wingman)
-
 > [!NOTE]
-> Wait ~10 seconds after Drone-0 launches before starting Drone-1, so Gazebo finishes spawning the first model.
+> `make px4_sitl gz_x500_mono_cam` does an **incremental build** (fast, ~5s if already built) then starts Gazebo Jetty with PX4's own tuned world (`default.sdf` — correct 1ms physics step, proper sensor plugin order). This avoids the accelerometer timeout and motor aliasing errors caused by the raw binary approach.
+>
+> Wait for `INFO [commander] Ready for takeoff!` before starting Drone-1.
+
+### Terminal C — Drone-1 (Wingman) — joins existing Gazebo, wait 10s after Drone-0
 
 ```bash
 cd ~/PX4-Autopilot
-export CC=gcc-12 CXX=g++-12
 
 PX4_SYS_AUTOSTART=4001 \
 PX4_GZ_MODEL=x500_mono_cam \
 PX4_GZ_MODEL_POSE="5,0,0,0,0,0" \
+PX4_GZ_STANDALONE=1 \
 PX4_UXRCE_DDS_KEY=2 \
+CC=gcc-12 CXX=g++-12 \
 ./build/px4_sitl_default/bin/px4 -i 1 -d
 ```
+
+> [!IMPORTANT]
+> `PX4_GZ_STANDALONE=1` tells PX4 to **connect to the already-running Gazebo** from Terminal B. Without it, PX4 will try to start a second Gazebo instance and fail.
 
 Drone-1 is spawned 5 metres along the X-axis from Drone-0.
 
