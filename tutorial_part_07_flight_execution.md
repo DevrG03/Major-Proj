@@ -369,7 +369,7 @@ class LeadPX4CommanderNode(Node):
             f"Takeoff requested: {alt_m}m — entering pre-arm streaming phase.")
 
     def _action_move(self, intent: dict) -> None:
-        direction = str(intent.get("direction", "north")).lower()
+        direction  = str(intent.get("direction", "north")).lower()
         distance_m = float(intent.get("distance_m", _DEFAULT_MOVE_DIST_M))
 
         if direction not in DIRECTION_OFFSETS:
@@ -382,23 +382,36 @@ class LeadPX4CommanderNode(Node):
         dx, dy = DIRECTION_OFFSETS[direction]
         self._tgt_x = self._cur_x + dx * distance_m
         self._tgt_y = self._cur_y + dy * distance_m
-        # Keep current altitude
-        self._tgt_z = self._cur_z
+
+        # Bug fix #3: use _tgt_z (last COMMANDED altitude), NOT _cur_z.
+        # _cur_z is the instantaneous measured altitude — if telemetry is
+        # delayed or the drone hasn't finished climbing yet, _cur_z can be
+        # 0.0 or a mid-climb value, causing the drone to descend during the move.
+        # _tgt_z is always the last altitude we explicitly commanded.
+        altitude_m = intent.get("altitude_m", None)
+        if altitude_m is not None:
+            self._tgt_z = -abs(float(altitude_m))   # NED: negative = up
+        # else: keep _tgt_z unchanged (hold last commanded altitude)
 
         self._offboard_active = True
         self.get_logger().info(
             f"Move {distance_m}m {direction} → target "
-            f"({self._tgt_x:.1f}, {self._tgt_y:.1f}, {self._tgt_z:.1f})"
+            f"({self._tgt_x:.1f}, {self._tgt_y:.1f}, z={self._tgt_z:.1f})"
         )
 
     def _action_hover(self, intent: dict) -> None:
-        """Hold current position (zero velocity setpoint)."""
+        """Hold current position at last COMMANDED altitude (not measured)."""
         self._tgt_x = self._cur_x
         self._tgt_y = self._cur_y
-        self._tgt_z = self._cur_z
+        # Bug fix #7: use _tgt_z, not _cur_z.
+        # If the drone was mid-descent due to Bug #3, _cur_z would lock in
+        # the ground-level altitude. _tgt_z holds the correct commanded altitude.
+        # (_tgt_x/_tgt_y use _cur_x/_cur_y to hold the CURRENT horizontal
+        # position, which is correct for hover.)
+        # _tgt_z is intentionally NOT updated here — keep the commanded altitude.
         self._offboard_active = True
         self.get_logger().info(
-            f"Hover/Hold at ({self._cur_x:.1f}, {self._cur_y:.1f}, {self._cur_z:.1f})."
+            f"Hover at ({self._cur_x:.1f}, {self._cur_y:.1f}, z_cmd={self._tgt_z:.1f})."
         )
 
     def _action_search_stop(self, intent: dict) -> None:
@@ -970,7 +983,7 @@ class WingmanPX4CommanderNode(Node):
             f"Wingman takeoff requested: {alt_m}m — entering pre-arm streaming phase.")
 
     def _action_move(self, intent: dict) -> None:
-        direction = str(intent.get("direction", "north")).lower()
+        direction  = str(intent.get("direction", "north")).lower()
         distance_m = float(intent.get("distance_m", _DEFAULT_MOVE_DIST_M))
 
         if direction not in DIRECTION_OFFSETS:
@@ -983,20 +996,26 @@ class WingmanPX4CommanderNode(Node):
         dx, dy = DIRECTION_OFFSETS[direction]
         self._tgt_x = self._cur_x + dx * distance_m
         self._tgt_y = self._cur_y + dy * distance_m
-        self._tgt_z = self._cur_z
+
+        # Bug fix #3: use _tgt_z (last commanded altitude), not _cur_z
+        altitude_m = intent.get("altitude_m", None)
+        if altitude_m is not None:
+            self._tgt_z = -abs(float(altitude_m))
+        # else: keep _tgt_z unchanged
+
         self._offboard_active = True
         self.get_logger().info(
             f"Wingman move {distance_m}m {direction} → "
-            f"({self._tgt_x:.1f}, {self._tgt_y:.1f}, {self._tgt_z:.1f})"
+            f"({self._tgt_x:.1f}, {self._tgt_y:.1f}, z={self._tgt_z:.1f})"
         )
 
     def _action_hover(self, intent: dict) -> None:
         self._tgt_x = self._cur_x
         self._tgt_y = self._cur_y
-        self._tgt_z = self._cur_z
+        # Bug fix #7: keep _tgt_z (commanded altitude), don't overwrite with _cur_z
         self._offboard_active = True
         self.get_logger().info(
-            f"Wingman hover at ({self._cur_x:.1f}, {self._cur_y:.1f})."
+            f"Wingman hover at ({self._cur_x:.1f}, {self._cur_y:.1f}, z_cmd={self._tgt_z:.1f})."
         )
 
     def _action_search_stop(self, intent: dict) -> None:

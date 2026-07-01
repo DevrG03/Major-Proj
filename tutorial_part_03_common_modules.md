@@ -676,8 +676,9 @@ class BaseToolRegistry:
     def _takeoff(self, params: dict) -> str:
         altitude = float(params.get('altitude', 5.0))
         altitude = max(1.0, min(30.0, altitude))
+        # Bug fix #1: publish 'altitude_m' — commander reads intent.get('altitude_m')
         self._publish_intent({
-            'action': 'takeoff', 'altitude': altitude, 'confidence': 'high'})
+            'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
         eta = int(altitude * 1.8) + 6
         return (
             f"Takeoff initiated. Ascending to {altitude}m. "
@@ -692,17 +693,19 @@ class BaseToolRegistry:
             'FWD': 'forward', 'BCK': 'backward',
             'L': 'left', 'R': 'right',
         }
-        raw_dir  = str(params.get('direction', 'N')).upper().strip()
+        raw_dir   = str(params.get('direction', 'N')).upper().strip()
         direction = _abbrev.get(raw_dir, raw_dir.lower())
         distance  = float(params.get('distance', 10.0))
         distance  = max(1.0, min(100.0, distance))
         altitude  = params.get('altitude', None)
 
+        # Bug fix #2: publish 'distance_m' — commander reads intent.get('distance_m')
+        # Bug fix #5: publish 'altitude_m' — commander reads intent.get('altitude_m')
         intent: dict = {
             'action': 'move', 'direction': direction,
-            'distance': distance, 'confidence': 'high'}
+            'distance_m': distance, 'confidence': 'high'}
         if altitude is not None:
-            intent['altitude'] = float(altitude)
+            intent['altitude_m'] = float(altitude)
 
         self._publish_intent(intent)
         eta = max(8, int(distance / 2.0) + 4)
@@ -815,7 +818,9 @@ class BaseToolRegistry:
         Never blocks more than 0.5s between abort checks (Loophole #2 fix).
         """
         secs = int(params.get('seconds', 5))
-        secs = max(1, min(30, secs))
+        # Bug fix #8: raised from 30 to 60 — takeoff ETA can be up to 33s (alt=15m),
+        # and move ETA for 100m is 54s. Capping at 30 caused premature resumption.
+        secs = max(1, min(60, secs))
         deadline = time.time() + secs
 
         while time.time() < deadline:
