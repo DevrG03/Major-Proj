@@ -87,6 +87,7 @@ AGENT RULES:
 8. STANDBY goal: call get_situation(), then wait(30), repeat. Do NOT call mission_complete.
 9. If context shows PENDING_LEAD_RESPONSE: call get_situation() next, then wait(10). Repeat until [LEAD ANSWERED] appears.
 10. NEVER call rtl() autonomously unless explicitly commanded by the Lead or if battery is critically low.
+11. NEVER call takeoff if already airborne (altitude > 1m). Just use move or hover.
 
 ══════════════════════════════════════════
 DIRECTION SHORTCUTS:
