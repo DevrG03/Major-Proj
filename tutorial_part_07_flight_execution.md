@@ -555,6 +555,10 @@ class LeadPX4CommanderNode(Node):
         tsp = TrajectorySetpoint()
         tsp.timestamp = now_us
         tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
+        # Must set derivatives to NaN to allow PX4's internal trajectory generator to smooth movement
+        tsp.velocity  = [float("nan"), float("nan"), float("nan")]
+        tsp.acceleration = [float("nan"), float("nan"), float("nan")]
+        tsp.jerk      = [float("nan"), float("nan"), float("nan")]
         tsp.yaw       = float("nan")   # let PX4 manage yaw
         self._tsp_pub.publish(tsp)
 
@@ -1140,6 +1144,10 @@ class WingmanPX4CommanderNode(Node):
         tsp = TrajectorySetpoint()
         tsp.timestamp = now_us
         tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
+        # Must set derivatives to NaN to allow PX4's internal trajectory generator to smooth movement
+        tsp.velocity  = [float("nan"), float("nan"), float("nan")]
+        tsp.acceleration = [float("nan"), float("nan"), float("nan")]
+        tsp.jerk      = [float("nan"), float("nan"), float("nan")]
         tsp.yaw       = float("nan")
         self._tsp_pub.publish(tsp)
 

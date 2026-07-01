@@ -366,6 +366,10 @@ class LeadAgentNode(Node):
         # Reset state for new goal
         self._abort_event.clear()
         self.ctx.clear_history()
+        
+        # Inject rigid stopping instruction to prevent SLM over-execution / hallucination
+        if not goal.startswith("STANDBY"):
+            goal += "\nCRITICAL: When you have finished the requested action, you MUST immediately call mission_complete to lock in your state and await the next command. Do not guess what to do next."
         self.ctx.set_goal(goal)
         self._mission_done       = False
         self._mission_report     = ""
