@@ -679,6 +679,12 @@ class BaseToolRegistry:
         # Bug fix #1: publish 'altitude_m' — commander reads intent.get('altitude_m')
         self._publish_intent({
             'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
+        
+        # ECSM Fix: Pause agent thread for 2.0s to allow physical pre-arm sequence 
+        # (1.3s) to complete before SLM can issue its next tool call.
+        import time
+        time.sleep(2.0)
+        
         eta = int(altitude * 1.8) + 6
         return (
             f"Takeoff initiated. Ascending to {altitude}m. "
