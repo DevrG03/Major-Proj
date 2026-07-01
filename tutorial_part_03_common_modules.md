@@ -679,12 +679,6 @@ class BaseToolRegistry:
         # Bug fix #1: publish 'altitude_m' — commander reads intent.get('altitude_m')
         self._publish_intent({
             'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
-        
-        # ECSM Fix: Pause agent thread for 4.0s to allow physical pre-arm sequence 
-        # (1.3s) and physical climb (>1.0m) to complete before SLM evaluates state.
-        import time
-        time.sleep(4.0)
-        
         eta = int(altitude * 1.8) + 6
         return (
             f"Takeoff initiated. Ascending to {altitude}m. "
@@ -1173,7 +1167,7 @@ class ContextManager:
         })
 
         if len(self.history) > MAX_HISTORY:
-            self.compress_history()
+            self._compress_oldest()
 
     def clear_history(self):
         """Call when a new mission starts."""
@@ -1184,7 +1178,7 @@ class ContextManager:
 
     # ── Compression ───────────────────────────────────────────────
 
-    def compress_history(self):
+    def _compress_oldest(self):
         """Condense the oldest COMPRESS_BATCH entries into a one-line summary."""
         batch = self.history[:COMPRESS_BATCH]
         self.history = self.history[COMPRESS_BATCH:]
