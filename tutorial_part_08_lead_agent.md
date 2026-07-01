@@ -678,19 +678,40 @@ ros2 topic echo /mission_status
 ### Test Fix #3 (Non-blocking ask_human)
 
 ```bash
-# Trigger obstacle detection
+# ── Step 1: Inject obstacle data continuously (keep running in Terminal A) ──
+# BOTH topics needed: detections feeds camera_summary, obstacle_vector feeds obstacle_vector
+ros2 topic pub --rate 3 /camera_0/detections std_msgs/msg/String \
+  '{"data": "Detected 1 obstacle(s): person ahead very_close"}'
+
 ros2 topic pub --rate 3 /camera_0/obstacle_vector std_msgs/msg/String \
-  '{data: "person:ahead:very_close"}'
+  '{"data": "person:ahead:very_close"}'
 
-# Agent will call ask_human — verify it does NOT freeze:
-ros2 topic echo /clarification_request   # Question appears here
-ros2 topic echo /mission_status          # Agent keeps publishing (not frozen)
-# Expected: /mission_status continues updating every few seconds
+# ── Step 2: Give agent an ACTIVE mission (Terminal B) ────────────────────────
+# The SLM only calls scan_camera/ask_human during an active mission, NOT in STANDBY.
+# A voice command breaks it out of the STANDBY loop into mission execution.
+ros2 topic pub --once \
+  --qos-durability transient_local \
+  --qos-reliability reliable \
+  /voice_commands std_msgs/msg/String \
+  '{"data": "take off and fly north 50 metres"}'
 
-# Answer the question:
-ros2 topic pub --once /voice_commands std_msgs/msg/String \
-  '{data: "hover and observe, do not approach"}'
-# Expected: [HUMAN ANSWERED] injected into context, agent continues
+# ── Step 3: Watch for ask_human output (Terminal C) ─────────────────────────
+ros2 topic echo /clarification_request
+# Expected sequence (takes ~30-60s for SLM to reach scan_camera):
+#   data: "Person detected directly ahead at very close range.
+#          Do I stop and hover, or continue the mission?"
+
+# ── Step 4: Verify agent is not frozen (Terminal D) ─────────────────────────
+ros2 topic echo /mission_status
+# Expected: /mission_status keeps updating every few seconds (Fix #3 verified)
+
+# ── Step 5: Answer the question (Terminal B) ─────────────────────────────────
+ros2 topic pub --once \
+  --qos-durability transient_local \
+  --qos-reliability reliable \
+  /voice_commands std_msgs/msg/String \
+  '{"data": "hover and observe, do not approach"}'
+# Expected: [HUMAN ANSWERED] injected into context, agent continues with hover
 ```
 
 ### Test Fix #4 (Safe Goal Replacement)
