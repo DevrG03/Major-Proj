@@ -674,18 +674,20 @@ class BaseToolRegistry:
     # ── Flight tools ──────────────────────────────────────────────
 
     def _takeoff(self, params: dict) -> str:
-        # Programmatic Guardrail: prevent mid-air takeoff hallucination
+        # Guardrail: parse altitude from the plain-text situation string "alt:Xm".
+        # Previous version tried json.loads() which ALWAYS failed (own_situation is
+        # not JSON) and silently fell through. Regex is the correct approach here.
         with self.ros.lock:
-            sit_str = getattr(self.ros, 'own_situation', '{}')
-        try:
-            if sit_str:
-                sit_data = json.loads(sit_str)
-                z = sit_data.get('position', {}).get('z', 0.0)
-                # NED z is negative when above ground
-                if -z > 1.0:
-                    return "[ERROR] Cannot takeoff while airborne. Use move or hover instead."
-        except Exception:
-            pass
+            sit_str = getattr(self.ros, 'own_situation', '')
+        if sit_str:
+            import re as _re
+            m = _re.search(r'alt:([-\d.]+)m', sit_str)
+            if m:
+                current_alt = float(m.group(1))
+                if current_alt > 1.0:
+                    return (
+                        f"[GUARDRAIL] Already airborne at {current_alt:.1f}m. "
+                        "Call move() or hover() — do NOT call takeoff while flying.")
 
         altitude = float(params.get('altitude', 5.0))
         altitude = max(1.0, min(30.0, altitude))
@@ -849,9 +851,13 @@ class BaseToolRegistry:
 
     def _mission_complete(self, params: dict) -> str:
         report = str(params.get('report', 'Mission accomplished.')).strip()
+        # Publish hover intent BEFORE setting _mission_done so the commander
+        # immediately locks the drone in place. Without this, the PX4 commander
+        # keeps streaming the last move setpoint indefinitely after the loop exits.
+        self._publish_intent({'action': 'hover', 'confidence': 'high'})
         self.ros._mission_done   = True
         self.ros._mission_report = report
-        return f"MISSION COMPLETE: {report}"
+        return f"MISSION COMPLETE: {report}. Drone locked in hover. Awaiting next command."
 
     # ── Registry helpers ───────────────────────────────────────────
 
@@ -1168,6 +1174,13 @@ class ContextManager:
         params_str = ", ".join(
             f"{k}={str(v)[:20]}" for k, v in params.items()
         ) if params else ""
+
+        # Sliding-window telemetry deduplication (Scratchpad Compression pattern):
+        # Keep ONLY the latest get_situation result in history. Older entries contain
+        # stale state (e.g. alt:0m DISARMED) that confuses small SLMs into
+        # re-issuing takeoff commands even when the drone is already airborne.
+        if tool == 'get_situation':
+            self.history = [h for h in self.history if h['tool'] != 'get_situation']
 
         # Auto-flag critical results to memory block so they survive compression
         if any(kw in result for kw in CRITICAL_KEYWORDS):
