@@ -342,6 +342,11 @@ class LeadPX4CommanderNode(Node):
     # ------------------------------------------------------------------ #
 
     def _action_takeoff(self, intent: dict) -> None:
+        if self._offboard_active and self._cur_z < -1.0:
+            self._publish_feedback("Already in flight. Takeoff ignored.")
+            self.get_logger().warning("Takeoff command ignored — drone is already in flight.")
+            return
+
         alt_m = float(intent.get("altitude_m", _DEFAULT_TAKEOFF_ALT_M))
 
         # Store the requested altitude — keepalive will command it AFTER arming.
@@ -963,6 +968,11 @@ class WingmanPX4CommanderNode(Node):
     # ------------------------------------------------------------------ #
 
     def _action_takeoff(self, intent: dict) -> None:
+        if self._offboard_active and self._cur_z < -1.0:
+            self._publish_feedback("Already in flight. Takeoff ignored.")
+            self.get_logger().warning("Takeoff command ignored — drone is already in flight.")
+            return
+
         alt_m = float(intent.get("altitude_m", _DEFAULT_TAKEOFF_ALT_M))
         self._pending_alt_m = abs(alt_m)
         # Stay at current ground position during pre-arm streaming phase

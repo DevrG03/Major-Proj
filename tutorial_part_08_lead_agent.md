@@ -466,6 +466,34 @@ class LeadAgentNode(Node):
                 self._slm_healthy = True
                 self.get_logger().info("SLM recovered — health restored.")
 
+            # ── Step 6.5: ECSM Critic Guardrail ──────────────────────
+            fsm_state = "GROUND"
+            if self.ctx.situation and "ARMED" in self.ctx.situation:
+                try:
+                    alt_str = self.ctx.situation.split("alt:")[1].split("m")[0]
+                    if float(alt_str) > 1.0:
+                        fsm_state = "AIRBORNE"
+                except Exception:
+                    pass
+
+            if fsm_state == "AIRBORNE" and tool_name == "takeoff":
+                self.get_logger().warning("ECSM CRITIC BLOCKED: illegal 'takeoff' while AIRBORNE.")
+                self.ctx.add_tool_result(
+                    tool_name, params,
+                    "[CRITIC REJECTION] Illegal action 'takeoff' attempted while AIRBORNE. You MUST output a permitted tool like 'move', 'wait', or 'mission_complete'."
+                )
+                time.sleep(0.5)
+                continue
+
+            if fsm_state == "GROUND" and tool_name in ("move", "hover", "land", "rtl"):
+                self.get_logger().warning(f"ECSM CRITIC BLOCKED: illegal '{tool_name}' while GROUND.")
+                self.ctx.add_tool_result(
+                    tool_name, params,
+                    f"[CRITIC REJECTION] Illegal action '{tool_name}' attempted while GROUND. You MUST call 'takeoff' first."
+                )
+                time.sleep(0.5)
+                continue
+
             # ── Step 7: Execute tool ─────────────────────────────────
             self.get_logger().info(
                 f"Lead → {tool_name}({json.dumps(params)[:100]})")

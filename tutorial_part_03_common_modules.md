@@ -1167,7 +1167,7 @@ class ContextManager:
         })
 
         if len(self.history) > MAX_HISTORY:
-            self._compress_oldest()
+            self.compress_history()
 
     def clear_history(self):
         """Call when a new mission starts."""
@@ -1178,7 +1178,7 @@ class ContextManager:
 
     # ── Compression ───────────────────────────────────────────────
 
-    def _compress_oldest(self):
+    def compress_history(self):
         """Condense the oldest COMPRESS_BATCH entries into a one-line summary."""
         batch = self.history[:COMPRESS_BATCH]
         self.history = self.history[COMPRESS_BATCH:]
