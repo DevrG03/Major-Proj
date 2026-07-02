@@ -284,6 +284,7 @@ class LeadPX4CommanderNode(Node):
         self._cur_x = float(msg.x)
         self._cur_y = float(msg.y)
         self._cur_z = float(msg.z)
+        self._telemetry_received = True
 
     def _on_emergency_stop(self, msg: Bool) -> None:
         if msg.data:
@@ -380,6 +381,14 @@ class LeadPX4CommanderNode(Node):
     def _action_move(self, intent: dict) -> None:
         direction  = str(intent.get("direction", "north")).lower()
         distance_m = float(intent.get("distance_m", _DEFAULT_MOVE_DIST_M))
+        
+        if not self._telemetry_received:
+            self.get_logger().info("Waiting for telemetry before computing relative move...")
+            import time
+            for _ in range(20):
+                if self._telemetry_received:
+                    break
+                time.sleep(0.1)
 
         if direction not in DIRECTION_OFFSETS:
             self._publish_feedback(
@@ -794,9 +803,13 @@ class WingmanPX4CommanderNode(Node):
 
         # Offboard state machine (3-phase, same as Lead)
         self._offboard_active: bool = False
-        self._keepalive_count: int = 0
-        self._pre_arm_phase: bool = False
-        self._pending_alt_m: float = 0.0
+        self._keepalive_count: int = 11
+
+        self._telemetry_received: bool = False
+
+        self._cur_x: float = 0.0
+        self._cur_y: float = 0.0
+        self._cur_z: float = 0.0
 
         # ------------------------------------------------------------------ #
         # State – follow_lead
@@ -880,6 +893,7 @@ class WingmanPX4CommanderNode(Node):
         self._cur_x = float(msg.x)
         self._cur_y = float(msg.y)
         self._cur_z = float(msg.z)
+        self._telemetry_received = True
 
     def _on_lead_position(self, msg: VehicleLocalPosition) -> None:
         """
@@ -1008,6 +1022,14 @@ class WingmanPX4CommanderNode(Node):
     def _action_move(self, intent: dict) -> None:
         direction  = str(intent.get("direction", "north")).lower()
         distance_m = float(intent.get("distance_m", _DEFAULT_MOVE_DIST_M))
+        
+        if not self._telemetry_received:
+            self.get_logger().info("Waiting for telemetry before computing relative move...")
+            import time
+            for _ in range(20):
+                if self._telemetry_received:
+                    break
+                time.sleep(0.1)
 
         if direction not in DIRECTION_OFFSETS:
             self._publish_feedback(
