@@ -697,7 +697,7 @@ class BaseToolRegistry:
         eta = int(altitude * 1.8) + 6
         return (
             f"Takeoff initiated. Ascending to {altitude}m. "
-            f"ETA ~{eta}s. Call wait({eta}) then get_situation().")
+            f"ETA ~{eta}s. Call wait({eta}), then get_situation(), then if goal is reached call mission_complete().")
 
     def _move(self, params: dict) -> str:
         # Normalise direction abbreviations
@@ -727,7 +727,7 @@ class BaseToolRegistry:
         alt_note = f" Changing altitude to {altitude}m." if altitude is not None else ""
         return (
             f"Moving {direction} {distance}m.{alt_note} "
-            f"ETA ~{eta}s. Call wait({eta}) then get_situation().")
+            f"ETA ~{eta}s. Call wait({eta}), then get_situation(), then if goal is reached call mission_complete().")
 
     def _hover(self, params: dict) -> str:
         self._publish_intent({'action': 'hover', 'confidence': 'high'})
