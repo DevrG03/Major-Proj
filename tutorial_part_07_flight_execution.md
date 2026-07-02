@@ -193,6 +193,7 @@ class LeadPX4CommanderNode(Node):
         # ------------------------------------------------------------------ #
         # State
         # ------------------------------------------------------------------ #
+        self._telemetry_received: bool = False
         self._cur_x: float = 0.0
         self._cur_y: float = 0.0
         self._cur_z: float = 0.0          # NED: negative = up
@@ -336,7 +337,7 @@ class LeadPX4CommanderNode(Node):
             handler(intent)
         except Exception as exc:
             self._publish_feedback(f"Action '{action}' raised: {exc}")
-            self.get_logger().error(f"Action handler exception: {exc}", exc_info=True)
+            self.get_logger().error(f"Action handler exception: {exc}")
 
     # ------------------------------------------------------------------ #
     # Action handlers
@@ -801,15 +802,10 @@ class WingmanPX4CommanderNode(Node):
         # Search expansion state
         self._search_radius_m: float = _DEFAULT_SEARCH_RADIUS_M
 
-        # Offboard state machine (3-phase, same as Lead)
         self._offboard_active: bool = False
         self._keepalive_count: int = 11
 
         self._telemetry_received: bool = False
-
-        self._cur_x: float = 0.0
-        self._cur_y: float = 0.0
-        self._cur_z: float = 0.0
 
         # ------------------------------------------------------------------ #
         # State – follow_lead
@@ -987,7 +983,7 @@ class WingmanPX4CommanderNode(Node):
             handler(intent)
         except Exception as exc:
             self._publish_feedback(f"Action '{action}' raised: {exc}")
-            self.get_logger().error(f"Action handler exception: {exc}", exc_info=True)
+            self.get_logger().error(f"Action handler exception: {exc}")
 
     # ------------------------------------------------------------------ #
     # Action handlers
