@@ -378,6 +378,7 @@ class LeadAgentNode(Node):
         self._human_response     = None
         self._human_wait_cycles  = 0
         self._consecutive_failures = 0
+        self._last_substantive_tool = None
         self._slm_healthy        = True
 
         self._agent_running = True
@@ -473,6 +474,21 @@ class LeadAgentNode(Node):
                 self.get_logger().info("SLM recovered — health restored.")
 
             # ── Step 7: Execute tool ─────────────────────────────────
+            # SLM loop protection: small models often ignore instructions and repeat commands
+            if tool_name not in ['get_situation', 'wait', 'scan_camera', 'get_battery', 'get_wingman_situation']:
+                norm_p = {}
+                for k, v in params.items():
+                    if isinstance(v, str): norm_p[k] = v.lower().strip()
+                    elif isinstance(v, (int, float)): norm_p[k] = float(v)
+                    else: norm_p[k] = v
+                tool_sig = f"{tool_name}:{json.dumps(norm_p, sort_keys=True)}"
+                if tool_sig == getattr(self, '_last_substantive_tool', None):
+                    self.get_logger().warning(f"SLM LOOP DETECTED on {tool_sig}. Auto-completing mission.")
+                    tool_name = 'mission_complete'
+                    params = {'report': 'Auto-completed mission to prevent repetitive action loop.'}
+                else:
+                    self._last_substantive_tool = tool_sig
+
             self.get_logger().info(
                 f"Lead → {tool_name}({json.dumps(params)[:100]})")
             result = self.tools.execute(tool_name, params)

@@ -388,6 +388,23 @@ class LeadPX4CommanderNode(Node):
             )
             return
 
+        # --- User-requested Anti-Loop / Exact Waypoint check ---
+        # If the exact same move intent is received, AND the drone is already 
+        # at the target position, ignore it to prevent runaway loops.
+        intent_sig = f"{direction}:{distance_m}:{intent.get('altitude_m', '')}"
+        at_target = False
+        if hasattr(self, '_tgt_x') and hasattr(self, '_tgt_y'):
+            dist_to_tgt = math.hypot(self._cur_x - self._tgt_x, self._cur_y - self._tgt_y)
+            if dist_to_tgt < 1.0:
+                at_target = True
+                
+        if intent_sig == getattr(self, '_last_move_sig', None) and at_target:
+            self.get_logger().warning("Identical move command received while already at target. Ignoring to prevent runaway loop.")
+            return
+            
+        self._last_move_sig = intent_sig
+        # -------------------------------------------------------
+
         dx, dy = DIRECTION_OFFSETS[direction]
         self._tgt_x = self._cur_x + dx * distance_m
         self._tgt_y = self._cur_y + dy * distance_m
@@ -1015,6 +1032,23 @@ class WingmanPX4CommanderNode(Node):
                 f"Valid: {', '.join(DIRECTION_OFFSETS.keys())}"
             )
             return
+
+        # --- User-requested Anti-Loop / Exact Waypoint check ---
+        # If the exact same move intent is received, AND the drone is already 
+        # at the target position, ignore it to prevent runaway loops.
+        intent_sig = f"{direction}:{distance_m}:{intent.get('altitude_m', '')}"
+        at_target = False
+        if hasattr(self, '_tgt_x') and hasattr(self, '_tgt_y'):
+            dist_to_tgt = math.hypot(self._cur_x - self._tgt_x, self._cur_y - self._tgt_y)
+            if dist_to_tgt < 1.0:
+                at_target = True
+                
+        if intent_sig == getattr(self, '_last_move_sig', None) and at_target:
+            self.get_logger().warning("Identical move command received while already at target. Ignoring to prevent runaway loop.")
+            return
+            
+        self._last_move_sig = intent_sig
+        # -------------------------------------------------------
 
         dx, dy = DIRECTION_OFFSETS[direction]
         self._tgt_x = self._cur_x + dx * distance_m
