@@ -291,13 +291,31 @@ class LeadAgentNode(Node):
 
     def _on_situation(self, msg: String):
         with self.lock:
-            self.own_situation = msg.data
+            sit = msg.data
             # Extract battery % from situation string for quick access
-            m = re.search(r'bat:(\d+(?:\.\d+)?)', msg.data)
+            m = re.search(r'bat:(\d+(?:\.\d+)?)', sit)
             if m:
                 self.battery_pct = float(m.group(1))
+                
+            # --- SLM Edge Device Optimization: Push Safety Data ---
+            # Small models often forget to call scan_camera(). We push critical
+            # obstacle detections directly into their immediate situation context.
+            has_obs = False
+            if hasattr(self, 'camera_summary') and self.camera_summary:
+                cam = self.camera_summary.lower()
+                if 'no detection' not in cam and 'clear' not in cam and 'not available' not in cam:
+                    has_obs = True
+                    
+            if has_obs:
+                sit += f"\n[CRITICAL SAFETY ALERT] {self.camera_summary}"
+                if hasattr(self, 'obstacle_vector') and self.obstacle_vector:
+                    sit += f" ({self.obstacle_vector})"
+                sit += "\nYou MUST call ask_human() immediately to handle this obstacle!"
+                
+            self.own_situation = sit
+            
         # Update context with fresh situation (called from ROS spin thread)
-        self.ctx.update_situation(msg.data)
+        self.ctx.update_situation(sit)
 
     def _on_camera(self, msg: String):
         with self.lock:
