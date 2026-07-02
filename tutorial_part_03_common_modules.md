@@ -675,18 +675,12 @@ class BaseToolRegistry:
 
     def _takeoff(self, params: dict) -> str:
         # Guardrail: parse altitude from the plain-text situation string "alt:Xm".
-        import time as _time
-        import re as _re
-        
-        sit_str = ""
-        for _ in range(3):
-            with self.ros.lock:
-                sit_str = getattr(self.ros, 'own_situation', '')
-            if sit_str:
-                break
-            _time.sleep(1.0)
-            
+        # Previous version tried json.loads() which ALWAYS failed (own_situation is
+        # not JSON) and silently fell through. Regex is the correct approach here.
+        with self.ros.lock:
+            sit_str = getattr(self.ros, 'own_situation', '')
         if sit_str:
+            import re as _re
             m = _re.search(r'alt:([-\d.]+)m', sit_str)
             if m:
                 current_alt = float(m.group(1))
@@ -694,8 +688,6 @@ class BaseToolRegistry:
                     return (
                         f"[GUARDRAIL] Already airborne at {current_alt:.1f}m. "
                         "Call move() or hover() — do NOT call takeoff while flying.")
-        else:
-            return "[GUARDRAIL] Telemetry not available yet. Please call get_situation() first and wait for data."
 
         altitude = float(params.get('altitude', 5.0))
         altitude = max(1.0, min(30.0, altitude))

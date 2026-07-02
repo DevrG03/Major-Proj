@@ -248,19 +248,19 @@ class SafetyMonitorNode(Node):
         # ------------------------------------------------------------------ #
         self.create_subscription(
             BatteryStatus,
-            "/fmu/out/battery_status",
+            "/fmu/out/battery_status_v1",
             lambda msg: self._on_battery(msg, "DRONE_0"),
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position",
+            "/fmu/out/vehicle_local_position_v1",
             lambda msg: self._on_position(msg, "DRONE_0"),
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             VehicleStatus,
-            "/fmu/out/vehicle_status",
+            "/fmu/out/vehicle_status_v1",
             lambda msg: self._on_vehicle_status(msg, "DRONE_0"),
             BEST_EFFORT_QOS,
         )
@@ -270,19 +270,19 @@ class SafetyMonitorNode(Node):
         # ------------------------------------------------------------------ #
         self.create_subscription(
             BatteryStatus,
-            "/px4_1/fmu/out/battery_status",
+            "/px4_1/fmu/out/battery_status_v1",
             lambda msg: self._on_battery(msg, "DRONE_1"),
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             VehicleLocalPosition,
-            "/px4_1/fmu/out/vehicle_local_position",
+            "/px4_1/fmu/out/vehicle_local_position_v1",
             lambda msg: self._on_position(msg, "DRONE_1"),
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             VehicleStatus,
-            "/px4_1/fmu/out/vehicle_status",
+            "/px4_1/fmu/out/vehicle_status_v1",
             lambda msg: self._on_vehicle_status(msg, "DRONE_1"),
             BEST_EFFORT_QOS,
         )
@@ -781,19 +781,19 @@ class LeadSensorAggregatorNode(Node):
         # ------------------------------------------------------------------ #
         self.create_subscription(
             VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position",
+            "/fmu/out/vehicle_local_position_v1",
             self._on_lead_position,
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             VehicleStatus,
-            "/fmu/out/vehicle_status",
+            "/fmu/out/vehicle_status_v1",
             self._on_vehicle_status,
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             BatteryStatus,
-            "/fmu/out/battery_status",
+            "/fmu/out/battery_status_v1",
             self._on_battery,
             BEST_EFFORT_QOS,
         )
@@ -831,7 +831,7 @@ class LeadSensorAggregatorNode(Node):
         # ------------------------------------------------------------------ #
         self.create_subscription(
             VehicleLocalPosition,
-            "/px4_1/fmu/out/vehicle_local_position",
+            "/px4_1/fmu/out/vehicle_local_position_v1",
             self._on_wingman_position,
             BEST_EFFORT_QOS,
         )
