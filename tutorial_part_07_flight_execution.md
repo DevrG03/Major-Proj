@@ -268,6 +268,12 @@ class LeadPX4CommanderNode(Node):
             self._on_emergency_stop,
             RELIABLE_QOS,
         )
+        self.create_subscription(
+            String,
+            "/safety/event",
+            self._on_safety_event,
+            RELIABLE_QOS,
+        )
 
         # ------------------------------------------------------------------ #
         # 10 Hz keepalive timer (PX4 offboard requires >2 Hz)
@@ -290,6 +296,14 @@ class LeadPX4CommanderNode(Node):
             self.get_logger().error("Emergency stop received — sending NAV_LAND.")
             self._offboard_active = False
             self._send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+
+    def _on_safety_event(self, msg: String) -> None:
+        if "CRITICAL" in msg.data or "E-STOP" in msg.data:
+            self.get_logger().error(f"HARDWARE SAFETY INTERCEPT: {msg.data}")
+            self.get_logger().error("Applying physical brakes (hover at current pos)!")
+            self._tgt_x = self._cur_x
+            self._tgt_y = self._cur_y
+            self._tgt_z = self._cur_z
 
     # ------------------------------------------------------------------ #
     # Intent dispatcher
@@ -879,6 +893,12 @@ class WingmanPX4CommanderNode(Node):
             self._on_emergency_stop,
             RELIABLE_QOS,
         )
+        self.create_subscription(
+            String,
+            "/safety/event",
+            self._on_safety_event,
+            RELIABLE_QOS,
+        )
 
         # ------------------------------------------------------------------ #
         # 10 Hz keepalive timer
@@ -919,6 +939,15 @@ class WingmanPX4CommanderNode(Node):
             self._follow_lead_active = False
             self._offboard_active = False
             self._send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+
+    def _on_safety_event(self, msg: String) -> None:
+        if "CRITICAL" in msg.data or "E-STOP" in msg.data:
+            self.get_logger().error(f"HARDWARE SAFETY INTERCEPT: {msg.data}")
+            self.get_logger().error("Applying physical brakes (hover at current pos)!")
+            self._follow_lead_active = False
+            self._tgt_x = self._cur_x
+            self._tgt_y = self._cur_y
+            self._tgt_z = self._cur_z
 
     # ------------------------------------------------------------------ #
     # follow_lead setpoint update

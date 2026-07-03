@@ -501,9 +501,10 @@ class LeadAgentNode(Node):
                     else: norm_p[k] = v
                 tool_sig = f"{tool_name}:{json.dumps(norm_p, sort_keys=True)}"
                 if tool_sig == getattr(self, '_last_substantive_tool', None):
-                    self.get_logger().warning(f"SLM LOOP DETECTED on {tool_sig}. Auto-completing mission.")
+                    self.get_logger().warning(f"SLM LOOP DETECTED on {tool_sig}. Halting drone and auto-completing mission.")
+                    self.tools.execute('hover', {})
                     tool_name = 'mission_complete'
-                    params = {'report': 'Auto-completed mission to prevent repetitive action loop.'}
+                    params = {'report': 'Auto-completed mission to prevent repetitive action loop. Drone halted.'}
                 else:
                     self._last_substantive_tool = tool_sig
 

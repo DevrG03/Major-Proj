@@ -700,6 +700,14 @@ class BaseToolRegistry:
             f"ETA ~{eta}s. Call wait({eta}), then get_situation(), then if goal is reached call mission_complete().")
 
     def _move(self, params: dict) -> str:
+        with self.ros.lock:
+            sit = self.ros.own_situation
+        if sit and 'alt:' in sit:
+            import re
+            m = re.search(r'alt:(\d+(?:\.\d+)?)', sit)
+            if m and float(m.group(1)) < 1.0:
+                return "Error: Cannot move while on the ground. You MUST call takeoff() first."
+
         # Normalise direction abbreviations
         _abbrev = {
             'N': 'north', 'S': 'south', 'E': 'east', 'W': 'west',
@@ -738,6 +746,13 @@ class BaseToolRegistry:
         Hover and accumulate camera detections for duration_sec seconds.
         The loop checks _abort_event every 2 seconds (interruptible).
         """
+        with self.ros.lock:
+            sit = self.ros.own_situation
+        if sit and 'alt:' in sit:
+            m = re.search(r'alt:(\d+(?:\.\d+)?)', sit)
+            if m and float(m.group(1)) < 1.0:
+                return "Error: Cannot search while on the ground. You MUST call takeoff() first."
+
         duration = int(params.get('duration_sec', 15))
         duration = max(5, min(60, duration))
 
