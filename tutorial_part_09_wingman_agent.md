@@ -102,7 +102,7 @@ Mission start → {"tool":"get_situation","params":{}}
 Take off →      {"tool":"takeoff","params":{"altitude":8}}
 Wait for ETA →  {"tool":"wait","params":{"seconds":22}}
 Confirm alt →   {"tool":"get_situation","params":{}}
-Follow lead →   {"tool":"follow_lead","params":{"offset_m":5}}
+Follow lead →   {"tool":"follow_lead","params":{"offset_m":3}}
 Wait follow →   {"tool":"wait","params":{"seconds":30}}
 Notify lead →   {"tool":"notify_lead","params":{"message":"In formation behind you."}}
 Scan area →     {"tool":"search","params":{"duration_sec":10}}

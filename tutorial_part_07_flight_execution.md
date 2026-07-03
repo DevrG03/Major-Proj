@@ -102,6 +102,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from typing import Optional
 
 import rclpy
@@ -205,6 +206,9 @@ class LeadPX4CommanderNode(Node):
         self._tgt_y: float = 0.0
         self._tgt_z: float = 0.0          # NED: 0 = ground level ← FIXED
 
+        # Perception-Aware velocity clamping state
+        self._last_cam_time: float = time.time()
+
         # Saved setpoint for search_resume
         self._saved_x: Optional[float] = None
         self._saved_y: Optional[float] = None
@@ -274,6 +278,12 @@ class LeadPX4CommanderNode(Node):
             self._on_safety_event,
             RELIABLE_QOS,
         )
+        self.create_subscription(
+            String,
+            "/camera_0/detections",
+            self._on_camera_detections,
+            BEST_EFFORT_QOS,
+        )
 
         # ------------------------------------------------------------------ #
         # 10 Hz keepalive timer (PX4 offboard requires >2 Hz)
@@ -285,6 +295,9 @@ class LeadPX4CommanderNode(Node):
     # ------------------------------------------------------------------ #
     # Telemetry callbacks
     # ------------------------------------------------------------------ #
+
+    def _on_camera_detections(self, msg: String) -> None:
+        self._last_cam_time = time.time()
 
     def _on_local_position(self, msg: VehicleLocalPosition) -> None:
         self._cur_x = float(msg.x)
@@ -595,10 +608,28 @@ class LeadPX4CommanderNode(Node):
                     f"Takeoff: climbing to {self._pending_alt_m}m "
                     f"(NED z={self._tgt_z:.1f}).")
 
+        # ── Perception-Aware Velocity Clamping ─────────────────────────────
+        dt = 0.1  # 10 Hz keepalive
+        latency = time.time() - self._last_cam_time
+        max_speed = 10.0 if latency < 0.5 else 2.0  # Clamp to 2m/s if blind
+        
+        dx = self._tgt_x - self._cur_x
+        dy = self._tgt_y - self._cur_y
+        dist = math.hypot(dx, dy)
+        step_dist = max_speed * dt
+        
+        if dist > step_dist and dist > 0.1:
+            ratio = step_dist / dist
+            safe_tgt_x = self._cur_x + dx * ratio
+            safe_tgt_y = self._cur_y + dy * ratio
+        else:
+            safe_tgt_x = self._tgt_x
+            safe_tgt_y = self._tgt_y
+
         # ── Publish TrajectorySetpoint ─────────────────────────────────────
         tsp = TrajectorySetpoint()
         tsp.timestamp = now_us
-        tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
+        tsp.position  = [safe_tgt_x, safe_tgt_y, self._tgt_z]
         # Must set derivatives to NaN to allow PX4's internal trajectory generator to smooth movement
         tsp.velocity  = [float("nan"), float("nan"), float("nan")]
         tsp.acceleration = [float("nan"), float("nan"), float("nan")]
@@ -1230,9 +1261,12 @@ class WingmanPX4CommanderNode(Node):
         if self._follow_lead_active and self._offboard_active:
             self._update_follow_setpoint()
 
+        # Phase 3: Artificial Potential Field (APF) Collision Avoidance
+        safe_x, safe_y = self._calculate_apf_repulsion(self._tgt_x, self._tgt_y)
+
         tsp = TrajectorySetpoint()
         tsp.timestamp = now_us
-        tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
+        tsp.position  = [safe_x, safe_y, self._tgt_z]
         # Must set derivatives to NaN to allow PX4's internal trajectory generator to smooth movement
         tsp.velocity  = [float("nan"), float("nan"), float("nan")]
         tsp.acceleration = [float("nan"), float("nan"), float("nan")]
@@ -1243,6 +1277,30 @@ class WingmanPX4CommanderNode(Node):
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+
+    def _calculate_apf_repulsion(self, target_x: float, target_y: float) -> tuple[float, float]:
+        """Calculates Artificial Potential Field repulsion to dodge Lead drone."""
+        import math
+        SAFE_RADIUS = 3.0
+        
+        if self._lead_x is None or self._lead_y is None:
+            return target_x, target_y
+            
+        dx = self._cur_x - self._lead_x
+        dy = self._cur_y - self._lead_y
+        dist = math.hypot(dx, dy)
+        
+        if 0.1 < dist < SAFE_RADIUS:
+            # Force inversely proportional to distance inside safe radius
+            force = (SAFE_RADIUS - dist) / dist
+            
+            # Repulse away from lead
+            repel_x = dx * force
+            repel_y = dy * force
+            
+            return target_x + repel_x, target_y + repel_y
+            
+        return target_x, target_y
 
     def _send_vehicle_command(
         self,

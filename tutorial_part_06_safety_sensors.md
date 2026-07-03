@@ -171,7 +171,7 @@ class SafetyMonitorNode(Node):
         # ------------------------------------------------------------------ #
         self.declare_parameter("battery_warn_pct", 20.0)
         self.declare_parameter("battery_rtl_pct", 15.0)
-        self.declare_parameter("min_separation_m", 5.0)
+        self.declare_parameter("min_separation_m", 3.0)
         self.declare_parameter("proximity_warn_interval_sec", 5.0)
 
         self._bat_warn_pct: float = (
