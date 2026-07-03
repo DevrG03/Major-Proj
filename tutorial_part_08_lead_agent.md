@@ -632,7 +632,7 @@ class LeadAgentNode(Node):
                     return tool_name, params
 
                 error_ctx = (
-                    f"Unknown tool '{tool_name}'. "
+                    f"Unknown tool '{tool_name}'. Raw output was: {raw} "
                     f"Valid tools: {sorted(self.tools.tools.keys())}")
                 self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
 
