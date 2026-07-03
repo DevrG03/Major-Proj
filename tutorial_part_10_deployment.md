@@ -431,7 +431,7 @@ source install/setup.bash
 
 ```bash
 cd ~/PX4-Autopilot
-PX4_SYS_AUTOSTART=4001 PX4_GZ_MODEL=x500_mono_cam \
+PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam \
 PX4_GZ_MODEL_POSE="0,0,0,0,0,0" PX4_UXRCE_DDS_KEY=1 \
 ./build/px4_sitl_default/bin/px4 -i 0 -d
 ```
@@ -444,7 +444,7 @@ PX4_GZ_MODEL_POSE="0,0,0,0,0,0" PX4_UXRCE_DDS_KEY=1 \
 
 ```bash
 cd ~/PX4-Autopilot
-PX4_SYS_AUTOSTART=4001 PX4_GZ_MODEL=x500_mono_cam \
+PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam \
 PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 \
 ./build/px4_sitl_default/bin/px4 -i 1 -d
 ```
