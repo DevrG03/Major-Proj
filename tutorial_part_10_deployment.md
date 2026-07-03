@@ -478,7 +478,12 @@ MicroXRCEAgent udp4 -p 8888
 ### STEP 4 — PC-1: Launch Lead Stack
 
 ```bash
-source ~/.bashrc
+# Terminal 4
+source ~/major_ws/install/setup.bash
+
+# Suppress harmless CycloneDDS PX4 type hash mismatch warnings
+export RCUTILS_CONSOLE_OUTPUT_FORMAT="[{severity}] [{name}]: {message}"
+
 ros2 launch major_project lead_pilot.launch.py
 ```
 
@@ -495,8 +500,12 @@ ros2 launch major_project lead_pilot.launch.py
 ### STEP 5 — PC-2: Launch Wingman Stack
 
 ```bash
-# On PC-2:
-source ~/.bashrc
+# Terminal 5 (on PC-2)
+source ~/major_ws/install/setup.bash
+
+# Suppress harmless CycloneDDS PX4 type hash mismatch warnings
+export RCUTILS_CONSOLE_OUTPUT_FORMAT="[{severity}] [{name}]: {message}"
+
 ros2 launch major_project wingman_pilot.launch.py
 ```
 
@@ -564,10 +573,10 @@ active_drone: "LEAD"
 
 ```bash
 # Speak or inject goal 1:
-ros2 topic pub --once /voice_command std_msgs/msg/String "data: 'search the north field'"
+ros2 topic pub --once /voice_commands std_msgs/msg/String "data: 'search the north field'"
 
 # Wait 5 s, then inject goal 2:
-ros2 topic pub --once /voice_command std_msgs/msg/String "data: 'return to home immediately'"
+ros2 topic pub --once /voice_commands std_msgs/msg/String "data: 'return to home immediately'"
 
 # Monitor:
 ros2 topic echo /mission_status
@@ -659,7 +668,7 @@ ros2 topic hz /camera_1/detections
 
 ```bash
 # Issue a split mission goal:
-ros2 topic pub --once /voice_command std_msgs/msg/String \
+ros2 topic pub --once /voice_commands std_msgs/msg/String \
   "data: 'search the field — lead take north, wingman take south'"
 
 # Monitor both drones:

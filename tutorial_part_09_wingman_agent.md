@@ -88,6 +88,7 @@ AGENT RULES:
 9. If context shows PENDING_LEAD_RESPONSE: call get_situation() next, then wait(10). Repeat until [LEAD ANSWERED] appears.
 10. NEVER call rtl() autonomously unless explicitly commanded by the Lead or if battery is critically low.
 11. NEVER call takeoff if already airborne (altitude > 1m). Just use move or hover.
+12. IMPORTANT: When you have reached your destination or completed the Lead's goal, you MUST call mission_complete() to end the mission. Do NOT repeat commands.
 
 ══════════════════════════════════════════
 DIRECTION SHORTCUTS:
@@ -103,7 +104,10 @@ Wait for ETA →  {"tool":"wait","params":{"seconds":22}}
 Confirm alt →   {"tool":"get_situation","params":{}}
 Follow lead →   {"tool":"follow_lead","params":{"offset_m":5}}
 Wait follow →   {"tool":"wait","params":{"seconds":30}}
-Done →          {"tool":"mission_complete","params":{"report":"Task finished."}}
+Notify lead →   {"tool":"notify_lead","params":{"message":"In formation behind you."}}
+Scan area →     {"tool":"search","params":{"duration_sec":10}}
+Ask lead →      {"tool":"ask_lead","params":{"question":"I see an object. Approach?"}}
+Done →          {"tool":"mission_complete","params":{"report":"Task finished. Holding formation."}}
 PROMPT_EOF
 ```
 
@@ -522,10 +526,34 @@ class WingmanAgentNode(Node):
 
             try:
                 raw_clean = raw.strip()
+                # --- SLM Edge Device Optimization: Robust JSON Extraction ---
+                # Small models (3B) often leak reasoning or output multiple JSON blocks.
+                # A naive rfind('}') grabs everything, corrupting the JSON. We use brace 
+                # counting to cleanly extract ONLY the very first complete JSON object.
                 start = raw_clean.find('{')
-                end   = raw_clean.rfind('}') + 1
-                if start >= 0 and end > start:
-                    raw_clean = raw_clean[start:end]
+                if start >= 0:
+                    brace_count = 0
+                    end = -1
+                    in_str = False
+                    escape = False
+                    for i, char in enumerate(raw_clean[start:], start=start):
+                        if escape:
+                            escape = False
+                            continue
+                        if char == '\\':
+                            escape = True
+                        elif char == '"':
+                            in_str = not in_str
+                        elif not in_str:
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end = i + 1
+                                    break
+                    if end > start:
+                        raw_clean = raw_clean[start:end]
 
                 data      = json.loads(raw_clean)
                 tool_name = data.get('tool', '')
