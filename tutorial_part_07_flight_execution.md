@@ -282,7 +282,7 @@ class LeadPX4CommanderNode(Node):
             String,
             "/camera_0/detections",
             self._on_camera_detections,
-            BEST_EFFORT_QOS,
+            RELIABLE_QOS,
         )
 
         # ------------------------------------------------------------------ #

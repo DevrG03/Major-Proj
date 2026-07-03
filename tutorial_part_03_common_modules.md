@@ -703,7 +703,7 @@ class BaseToolRegistry:
             sit = self.ros.own_situation
         if sit and 'alt:' in sit:
             import re
-            m = re.search(r'alt:(\d+(?:\.\d+)?)', sit)
+            m = re.search(r'alt:([-\d.]+)m', sit)
             if m and float(m.group(1)) < 1.0:
                 return "Error: Cannot move while on the ground. You MUST call takeoff() first."
 
@@ -748,7 +748,7 @@ class BaseToolRegistry:
             sit = self.ros.own_situation
         if sit and 'alt:' in sit:
             import re
-            m = re.search(r'alt:(\d+(?:\.\d+)?)', sit)
+            m = re.search(r'alt:([-\d.]+)m', sit)
             if m and float(m.group(1)) < 1.0:
                 return "Error: Cannot search while on the ground. You MUST call takeoff() first."
 
