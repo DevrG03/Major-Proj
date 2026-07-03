@@ -559,6 +559,15 @@ class WingmanAgentNode(Node):
                 tool_name = data.get('tool', '')
                 params    = data.get('params', {})
 
+                # --- Edge Model Schema Fallback ---
+                # If model hallucinates {"scan_camera": {}} instead of {"tool": "scan_camera", "params": {}}
+                if not tool_name:
+                    for k, v in data.items():
+                        if self.tools.is_valid(k):
+                            tool_name = k
+                            params = v if isinstance(v, dict) else {}
+                            break
+
                 if not isinstance(params, dict):
                     params = {}
 
