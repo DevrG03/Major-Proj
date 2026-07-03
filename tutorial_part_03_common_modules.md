@@ -695,9 +695,8 @@ class BaseToolRegistry:
         self._publish_intent({
             'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
         eta = int(altitude * 1.8) + 6
-        return (
-            f"Takeoff initiated. Ascending to {altitude}m. "
-            f"ETA ~{eta}s. Call wait({eta}), then get_situation(), then if goal is reached call mission_complete().")
+        self._wait({'seconds': eta})
+        return f"Takeoff complete. Ascended to {altitude}m."
 
     def _move(self, params: dict) -> str:
         with self.ros.lock:
@@ -732,10 +731,9 @@ class BaseToolRegistry:
 
         self._publish_intent(intent)
         eta = max(8, int(distance / 2.0) + 4)
-        alt_note = f" Changing altitude to {altitude}m." if altitude is not None else ""
-        return (
-            f"Moving {direction} {distance}m.{alt_note} "
-            f"ETA ~{eta}s. Call wait({eta}), then get_situation(), then if goal is reached call mission_complete().")
+        alt_note = f" Changed altitude to {altitude}m." if altitude is not None else ""
+        self._wait({'seconds': eta})
+        return f"Move complete. Reached {direction} {distance}m.{alt_note}"
 
     def _hover(self, params: dict) -> str:
         self._publish_intent({'action': 'hover', 'confidence': 'high'})
@@ -749,6 +747,7 @@ class BaseToolRegistry:
         with self.ros.lock:
             sit = self.ros.own_situation
         if sit and 'alt:' in sit:
+            import re
             m = re.search(r'alt:(\d+(?:\.\d+)?)', sit)
             if m and float(m.group(1)) < 1.0:
                 return "Error: Cannot search while on the ground. You MUST call takeoff() first."

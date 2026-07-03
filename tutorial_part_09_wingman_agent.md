@@ -78,8 +78,8 @@ COMPLETION:
 AGENT RULES:
 ══════════════════════════════════════════
 1. Start every mission with get_situation() to read current state.
-2. After takeoff: call wait(N) then get_situation() to confirm altitude reached.
-3. After move: call wait(ETA) then get_situation() to confirm arrival.
+2. After takeoff: call get_situation() to confirm altitude reached.
+3. After move: call get_situation() to confirm arrival.
 4. Battery ≤ 20%: call notify_lead immediately. Plan RTL soon.
 5. Battery ≤ 15%: call rtl() immediately. Safety monitor also does this independently.
 6. Wingman NEVER contacts the human GCS operator — all comms go to Lead.
@@ -100,10 +100,8 @@ EXAMPLES:
 ══════════════════════════════════════════
 Mission start → {"tool":"get_situation","params":{}}
 Take off →      {"tool":"takeoff","params":{"altitude":8}}
-Wait for ETA →  {"tool":"wait","params":{"seconds":22}}
 Confirm alt →   {"tool":"get_situation","params":{}}
 Follow lead →   {"tool":"follow_lead","params":{"offset_m":3}}
-Wait follow →   {"tool":"wait","params":{"seconds":30}}
 Notify lead →   {"tool":"notify_lead","params":{"message":"In formation behind you."}}
 Scan area →     {"tool":"search","params":{"duration_sec":10}}
 Ask lead →      {"tool":"ask_lead","params":{"question":"I see an object. Approach?"}}
