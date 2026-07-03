@@ -634,13 +634,16 @@ class LeadAgentNode(Node):
                 error_ctx = (
                     f"Unknown tool '{tool_name}'. "
                     f"Valid tools: {sorted(self.tools.tools.keys())}")
+                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
 
             except json.JSONDecodeError as exc:
                 error_ctx = (
                     f"JSON parse error: {str(exc)[:80]}. "
                     "Output ONLY {{\"tool\":\"...\",\"params\":{{...}}}}")
+                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
             except Exception as exc:
                 error_ctx = f"Parse error: {str(exc)[:80]}"
+                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
 
         return None, {}
 
