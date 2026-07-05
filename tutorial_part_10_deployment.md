@@ -799,9 +799,14 @@ graph TB
 
 ## 10.7 Multi-PC Simulation (Optional)
 
-To distribute compute, you can run Drone-0 (Lead) on PC1 and Drone-1 (Wingman) on PC2. However, ROS2 default multicast discovery often fails over standard Wi-Fi routers, meaning nodes on PC2 won't see nodes on PC1.
+To distribute compute across multiple PCs (e.g., PC1 and PC2), you must account for two critical factors:
+1. **The Physical World:** Gazebo is a single physics engine. You cannot launch PX4 instance 0 on PC1 and instance 1 on PC2 because they will spawn in parallel, isolated Gazebo windows and will never see each other.
+2. **Network Discovery:** ROS2 default UDP multicast discovery often fails over standard Wi-Fi routers.
 
-To resolve this, create a CycloneDDS configuration file on **both** PCs (`~/cyclonedds.xml`):
+To properly distribute load, run the **Physical World (Gazebo + both PX4s + Commander Nodes)** on PC1, and the **AI Brains (LLM Agents)** on PC2. 
+
+### Step 1: CycloneDDS Configuration
+Create a CycloneDDS configuration file on **both** PCs (`~/cyclonedds.xml`) to bypass multicast dropping:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -830,17 +835,21 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=~/cyclonedds.xml
 ```
 
-**PC1 (Lead):**
+### Step 2: Launch PC1 (The Physical World)
+Open four terminals on PC1 (exporting variables in each):
 - Terminal 1: `MicroXRCEAgent udp4 -p 8888`
 - Terminal 2: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_UXRCE_DDS_KEY=1 ./build/px4_sitl_default/bin/px4 -i 0 -d`
-- Terminal 3: `ros2 launch major_project lead_pilot.launch.py`
+- Terminal 3: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 ./build/px4_sitl_default/bin/px4 -i 1 -d`
+- Terminal 4: `ros2 run major_project lead_px4_commander` & `ros2 run major_project wingman_px4_commander` (or use a custom launch file that only launches non-Agent nodes).
 
-**PC2 (Wingman):**
-- Terminal 1: `MicroXRCEAgent udp4 -p 8888`
-- Terminal 2: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 ./build/px4_sitl_default/bin/px4 -i 1 -d`
-- Terminal 3: `ros2 launch major_project wingman_pilot.launch.py`
+### Step 3: Launch PC2 (The AI Brains)
+Open a terminal on PC2 (exporting variables):
+- Terminal 1: `ros2 run major_project lead_agent`
+- Terminal 2: `ros2 run major_project wingman_agent`
 
-*Note: For QGroundControl telemetry across PCs, enable `MAV_0_BROADCAST=1` and `MAV_1_BROADCAST=1` in QGC parameters.*
+The heavy AI processing will happen on PC2 and beam decisions instantly over Wi-Fi to the commanders running on PC1.
+
+*Note: For QGroundControl telemetry across PCs, enable `MAV_0_BROADCAST=1` and `MAV_1_BROADCAST=1` in QGC parameters on PC1.*
 
 ---
 
