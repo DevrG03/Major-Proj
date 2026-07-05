@@ -1135,7 +1135,7 @@ python3 ~/major_ws/src/major_project/benchmark/latency_benchmark.py 192.168.1.10
 |---|---|
 | < 400ms | Synchronous NLU — SLM runs in the ROS2 callback, simple architecture |
 | 400–800ms | Async NLU — SLM runs in background thread, ROS2 publishes last-known setpoint at 10Hz independently |
-| > 800ms | Async NLU + reduce model context (`num_ctx=256`) or use `qwen3.5:1.5b` |
+| > 800ms | Async NLU + reduce model context (`num_ctx=8192`) or use `qwen3.5:1.5b` |
 
 **If async NLU is needed** (add this to your notes — we implement it in Part 9):
 - The NLU node has two threads: inference thread (slow, runs SLM) and setpoint thread (fast, 10Hz)
@@ -1565,7 +1565,7 @@ logger = logging.getLogger(__name__)
 class OllamaClient:
     def __init__(self, host: str = "localhost", port: int = 11434,
                  model: str = "qwen3.5:2b",
-                 num_ctx: int = 2048, max_retries: int = 3,
+                 num_ctx: int = 8192, max_retries: int = 3,
                  timeout: float = 15.0):
         self.url = f"http://{host}:{port}/api/generate"
         self.model = model
@@ -4072,7 +4072,7 @@ class LeadAgentNode(Node):
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen3.5:2b')
-        self.declare_parameter('num_ctx', 2048)
+        self.declare_parameter(\'num_ctx\', 8192)
         self.declare_parameter('loop_pause_sec', 0.5)
 
         host    = self.get_parameter('ollama_host').value
@@ -4353,7 +4353,7 @@ EOF
 ## Section 9: Wingman Pilot Agent
 
 The wingman agent mirrors the lead's architecture but uses a smaller context
-window (num_ctx=1024), communicates with Lead instead of human, and never
+window (num_ctx=8192), communicates with Lead instead of human, and never
 contacts the Ground Commander directly.
 
 ### 9.1 Create prompt directory
@@ -4431,7 +4431,7 @@ Key differences from Lead Agent:
   - Uses WingmanToolRegistry (ask_lead, notify_lead, message_lead)
   - Gets mission goals from Lead via /agent/lead_to_wingman
   - Reports completion to Lead, not to human
-  - Smaller context (num_ctx=1024 to leave headroom for Lead)
+  - Smaller context (num_ctx=8192 to leave headroom for Lead)
 """
 import rclpy
 from rclpy.node import Node
@@ -4465,7 +4465,7 @@ class WingmanAgentNode(Node):
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen3.5:2b')
-        self.declare_parameter('num_ctx', 1024)
+        self.declare_parameter(\'num_ctx\', 8192)
         self.declare_parameter('loop_pause_sec', 0.5)
 
         host    = self.get_parameter('ollama_host').value
@@ -4784,7 +4784,7 @@ lead_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 2048
+    num_ctx: 8192
     loop_pause_sec: 0.5    # pause between inference cycles
 
 # ── Execution layer ────────────────────────────────────────────────────────────
@@ -4811,7 +4811,7 @@ wingman_agent_node:
     ollama_host: "localhost"   # PC-2's own Ollama instance
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 1024              # smaller than Lead to leave headroom on PC-2
+    num_ctx: 8192              # smaller than Lead to leave headroom on PC-2
     loop_pause_sec: 0.5
 
 # ── Execution layer ────────────────────────────────────────────────────────────

@@ -293,7 +293,7 @@ class OllamaClient:
         host: str = "localhost",
         port: int = 11434,
         model: str = "qwen3.5:2b",
-        num_ctx: int = 2048,
+        num_ctx: int = 8192,
         max_retries: int = 3,
         timeout: float = 15.0,
     ):

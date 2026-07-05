@@ -55,7 +55,7 @@ lead_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 2048
+    num_ctx: 8192
 
 # ── Execution layer ───────────────────────────────────────────────────────────
 lead_px4_commander_node:
@@ -102,7 +102,7 @@ wingman_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 1024
+    num_ctx: 8192
 
 # ── Execution layer ───────────────────────────────────────────────────────────
 wingman_px4_commander_node:
@@ -112,7 +112,7 @@ EOF
 ```
 
 > [!TIP]
-> `num_ctx: 1024` for the wingman halves the SLM memory footprint. The wingman's tool calls are narrower (fly / hover / report), so the smaller context is sufficient and leaves more GPU/CPU headroom on PC-2.
+> `num_ctx: 8192` for the wingman halves the SLM memory footprint. The wingman's tool calls are narrower (fly / hover / report), so the smaller context is sufficient and leaves more GPU/CPU headroom on PC-2.
 
 ---
 

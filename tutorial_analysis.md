@@ -230,4 +230,4 @@ The tutorial provides a diagnostic script (`latency_benchmark.py`) to measure Ol
 |---|---|---|
 | **< 400 ms** | Green | **Synchronous NLU:** Simple design; SLM runs directly within the ROS2 callbacks. |
 | **400 - 800 ms** | Yellow | **Asynchronous NLU:** SLM runs in a separate background thread; the commander node sends keepalives and targets at 10 Hz independently. |
-| **> 800 ms** | Red | **Degraded Mode:** Switch to a smaller model (e.g., `qwen3.5:1.5b`) and reduce context limits (`num_ctx=256`). |
+| **> 800 ms** | Red | **Degraded Mode:** Switch to a smaller model (e.g., `qwen3.5:1.5b`) and reduce context limits (`num_ctx=8192`). |

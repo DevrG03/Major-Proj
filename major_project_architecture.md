@@ -101,7 +101,7 @@ Cross-PC topics (DDS bridged over WiFi, automatic with same ROS_DOMAIN_ID):
 | MicroXRCE-DDS agent | Port 8888 |
 | Camera source | Gazebo camera plugin → `/camera/image_raw` |
 | YOLO model | YOLOv8-nano (`yolov8n.pt`) |
-| Ollama context window | `num_ctx=2048` (Lead agent) |
+| Ollama context window | `num_ctx=8192` (Lead agent) |
 
 ### 2.3 PC-2 Only
 
@@ -109,7 +109,7 @@ Cross-PC topics (DDS bridged over WiFi, automatic with same ROS_DOMAIN_ID):
 |---|---|
 | Simulator | Gazebo Harmonic (separate SITL) |
 | PX4 instance flag | `-i 1` → namespace `/px4_1/fmu/` |
-| Ollama context window | `num_ctx=1024` (Wingman agent) |
+| Ollama context window | `num_ctx=8192` (Wingman agent) |
 
 ### 2.4 PX4 Drone Namespaces
 
@@ -399,7 +399,7 @@ lead_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 2048
+    num_ctx: 8192
     loop_pause_sec: 0.5
 ```
 
@@ -428,7 +428,7 @@ wingman_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 1024
+    num_ctx: 8192
     loop_pause_sec: 0.5
 ```
 
@@ -750,7 +750,7 @@ Earlier: get_situation()→bat:95%... | takeoff(alt=10)→Takeoff initiated | wa
 | Output (tool call JSON) | ~30–50 |
 | **Grand total** | **~1010** |
 
-Fits within `num_ctx=2048` with ~50% headroom.
+Fits within `num_ctx=8192` with ~50% headroom.
 
 ---
 
@@ -1047,7 +1047,7 @@ lead_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 2048
+    num_ctx: 8192
     loop_pause_sec: 0.5
 
 lead_px4_commander_node:
@@ -1068,7 +1068,7 @@ wingman_agent_node:
     ollama_host: "localhost"
     ollama_port: 11434
     model: "qwen3.5:2b"
-    num_ctx: 1024
+    num_ctx: 8192
     loop_pause_sec: 0.5
 
 wingman_px4_commander_node:
@@ -1214,7 +1214,7 @@ Edit both config files:
 lead_agent_node:
   ros__parameters:
     model: "qwen3.5:7b"
-    num_ctx: 4096
+    num_ctx: 8192
 ```
 Pull first: `ollama pull qwen3.5:7b`. Larger models improve accuracy, increase latency.
 
@@ -1391,6 +1391,6 @@ Point agent at remote Ollama: set `ollama_host: "10.34.211.86"` in config.
 | Context compression at 8 entries | Keeps prompt under 1000 tokens; preserves recent actions in full detail |
 | Natural language Lead→Wingman | No schema parsing needed; SLM generates and understands natural language natively |
 | JSON Wingman→Lead | Allows Lead to route on `type` field (query vs status) without LLM parsing |
-| Wingman `num_ctx=1024` | Wingman context is simpler (no human comms, shorter goal); saves ~2s per inference |
+| Wingman `num_ctx=8192` | Wingman context is simpler (no human comms, shorter goal); saves ~2s per inference |
 | `battery_pct` parsed via regex | Sensor aggregator publishes situation as text; regex avoids a separate battery topic subscription in the agent |
 | Altitude in `move` via optional param | Enables single-tool direction+altitude change; backward compatible (param omission = keep altitude) |

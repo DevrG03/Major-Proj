@@ -915,7 +915,7 @@ A conference paper (target: IEEE ICRA 2027 or similar) reporting:
     ollama_host: localhost
     ollama_port: 11434
     model: qwen3.5:2b
-    num_ctx: 2048
+    num_ctx: 8192
     inference_timeout: 10.0
     confidence_gate:
       medium_warn: true
