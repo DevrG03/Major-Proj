@@ -1210,7 +1210,7 @@ class WingmanSensorAggregatorNode(Node):
         # ------------------------------------------------------------------ #
         self.create_subscription(
             VehicleLocalPosition,
-            "/px4_1/fmu/out/vehicle_local_position",
+            "/px4_1/fmu/out/vehicle_local_position_v1",
             self._on_position,
             BEST_EFFORT_QOS,
         )

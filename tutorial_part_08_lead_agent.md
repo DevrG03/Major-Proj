@@ -106,11 +106,11 @@ Mission start → {"tool":"get_situation","params":{}}
 Command Wingman → {"tool":"message_wingman","params":{"message":"Takeoff to 10m and follow me at 3m offset.","msg_type":"task"}}
 Take off →      {"tool":"takeoff","params":{"altitude":10}}
 Confirm →       {"tool":"get_situation","params":{}}
-Command Wingman → {"tool":"message_wingman","params":{"message":"I am searching North. You search East for 20s.","msg_type":"task"}}
+Command Wingman → {"tool":"message_wingman","params":{"message":"I am moving North 50m. You move East 50m then search for 20s.","msg_type":"task"}}
 Move north →    {"tool":"move","params":{"direction":"N","distance":50}}
 Scan area →     {"tool":"search","params":{"duration_sec":20}}
 Found object →  {"tool":"remember","params":{"fact":"football at pos(50,0) N sector at 10m alt"}}
-Tell wingman →  {"tool":"message_wingman","params":{"message":"Football found N50m. Cover E sector.","msg_type":"task"}}
+Tell wingman →  {"tool":"message_wingman","params":{"message":"Football found N50m. Move back to origin.","msg_type":"task"}}
 Status GCS →    {"tool":"notify_human","params":{"message":"North sector surveyed. Found football at 50m N."}}
 Done →          {"tool":"mission_complete","params":{"report":"Football found 50m north. Wingman covered east. Goal achieved."}}
 PROMPT_EOF
