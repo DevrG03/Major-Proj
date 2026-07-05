@@ -1216,13 +1216,13 @@ class WingmanSensorAggregatorNode(Node):
         )
         self.create_subscription(
             VehicleStatus,
-            "/px4_1/fmu/out/vehicle_status",
+            "/px4_1/fmu/out/vehicle_status_v1",
             self._on_vehicle_status,
             BEST_EFFORT_QOS,
         )
         self.create_subscription(
             BatteryStatus,
-            "/px4_1/fmu/out/battery_status",
+            "/px4_1/fmu/out/battery_status_v1",
             self._on_battery,
             BEST_EFFORT_QOS,
         )

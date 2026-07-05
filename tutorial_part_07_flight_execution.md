@@ -608,28 +608,10 @@ class LeadPX4CommanderNode(Node):
                     f"Takeoff: climbing to {self._pending_alt_m}m "
                     f"(NED z={self._tgt_z:.1f}).")
 
-        # ── Perception-Aware Velocity Clamping ─────────────────────────────
-        dt = 0.1  # 10 Hz keepalive
-        latency = time.time() - self._last_cam_time
-        max_speed = 10.0 if latency < 0.5 else 2.0  # Clamp to 2m/s if blind
-        
-        dx = self._tgt_x - self._cur_x
-        dy = self._tgt_y - self._cur_y
-        dist = math.hypot(dx, dy)
-        step_dist = max_speed * dt
-        
-        if dist > step_dist and dist > 0.1:
-            ratio = step_dist / dist
-            safe_tgt_x = self._cur_x + dx * ratio
-            safe_tgt_y = self._cur_y + dy * ratio
-        else:
-            safe_tgt_x = self._tgt_x
-            safe_tgt_y = self._tgt_y
-
         # ── Publish TrajectorySetpoint ─────────────────────────────────────
         tsp = TrajectorySetpoint()
         tsp.timestamp = now_us
-        tsp.position  = [safe_tgt_x, safe_tgt_y, self._tgt_z]
+        tsp.position  = [self._tgt_x, self._tgt_y, self._tgt_z]
         # Must set derivatives to NaN to allow PX4's internal trajectory generator to smooth movement
         tsp.velocity  = [float("nan"), float("nan"), float("nan")]
         tsp.acceleration = [float("nan"), float("nan"), float("nan")]

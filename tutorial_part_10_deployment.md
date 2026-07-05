@@ -797,5 +797,52 @@ graph TB
 
 ---
 
+## 10.7 Multi-PC Simulation (Optional)
+
+To distribute compute, you can run Drone-0 (Lead) on PC1 and Drone-1 (Wingman) on PC2. However, ROS2 default multicast discovery often fails over standard Wi-Fi routers, meaning nodes on PC2 won't see nodes on PC1.
+
+To resolve this, create a CycloneDDS configuration file on **both** PCs (`~/cyclonedds.xml`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <!-- Change wlan0 to your network interface (e.g., eth0) -->
+      <NetworkInterfaceAddress>wlan0</NetworkInterfaceAddress>
+      <AllowMulticast>true</AllowMulticast>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers>
+        <Peer Address="IP_OF_PC1" />
+        <Peer Address="IP_OF_PC2" />
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
+```
+
+Before launching any ROS2 or PX4 terminals on either PC, export the following variables:
+```bash
+export ROS_DOMAIN_ID=0
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI=~/cyclonedds.xml
+```
+
+**PC1 (Lead):**
+- Terminal 1: `MicroXRCEAgent udp4 -p 8888`
+- Terminal 2: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_UXRCE_DDS_KEY=1 ./build/px4_sitl_default/bin/px4 -i 0 -d`
+- Terminal 3: `ros2 launch major_project lead_pilot.launch.py`
+
+**PC2 (Wingman):**
+- Terminal 1: `MicroXRCEAgent udp4 -p 8888`
+- Terminal 2: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 ./build/px4_sitl_default/bin/px4 -i 1 -d`
+- Terminal 3: `ros2 launch major_project wingman_pilot.launch.py`
+
+*Note: For QGroundControl telemetry across PCs, enable `MAV_0_BROADCAST=1` and `MAV_1_BROADCAST=1` in QGC parameters.*
+
+---
+
 > [!NOTE]
 > This completes the 10-part drone swarm tutorial series. The system is now fully specified, built, tested, and deployable. For production use, replace the SITL PX4 instances with real hardware, swap `use_usb_camera: true` with live camera feeds, and adjust `battery_rtl_pct` thresholds to match your battery chemistry.
