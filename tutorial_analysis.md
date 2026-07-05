@@ -47,7 +47,7 @@ graph TD
 *   **Operating System:** Ubuntu 26.04 LTS (utilizing a GCC 15 environment).
 *   **ROS2 Distro:** ROS2 Lyrical (utilizing `ament_python` as the build tool for custom nodes).
 *   **DDS Middleware:** CycloneDDS (explicitly preferred over FastDDS for better multicast reliability over WiFi).
-*   **Local LLM Engine:** Ollama running `qwen2.5-coder:3b` (quantized to 8-bit, running offline).
+*   **Local LLM Engine:** Ollama running `qwen3.5:2b` (quantized to 8-bit, running offline).
 *   **Simulator & Flight Stack:** PX4 Autopilot SITL connected to a shared Gazebo simulation server.
 *   **DDS Bridge:** MicroXRCE-DDS Agent running on port `8888` serving UDP channels.
 
@@ -224,10 +224,10 @@ Based on compiling and launching this setup in modern Ubuntu environments, sever
 The tutorial provides a diagnostic script (`latency_benchmark.py`) to measure Ollama's inference performance. 
 
 > [!IMPORTANT]
-> The latency of `qwen2.5-coder:3b` dictates the choice of NLU communication architecture:
+> The latency of `qwen3.5:2b` dictates the choice of NLU communication architecture:
 
 | Mean Latency (ms) | Severity | Required NLU Execution Architecture |
 |---|---|---|
 | **< 400 ms** | Green | **Synchronous NLU:** Simple design; SLM runs directly within the ROS2 callbacks. |
 | **400 - 800 ms** | Yellow | **Asynchronous NLU:** SLM runs in a separate background thread; the commander node sends keepalives and targets at 10 Hz independently. |
-| **> 800 ms** | Red | **Degraded Mode:** Switch to a smaller model (e.g., `qwen2.5-coder:1.5b`) and reduce context limits (`num_ctx=256`). |
+| **> 800 ms** | Red | **Degraded Mode:** Switch to a smaller model (e.g., `qwen3.5:1.5b`) and reduce context limits (`num_ctx=256`). |

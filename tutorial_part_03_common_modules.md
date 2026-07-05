@@ -292,7 +292,7 @@ class OllamaClient:
         self,
         host: str = "localhost",
         port: int = 11434,
-        model: str = "qwen2.5-coder:3b",
+        model: str = "qwen3.5:2b",
         num_ctx: int = 2048,
         max_retries: int = 3,
         timeout: float = 15.0,

@@ -54,7 +54,7 @@ lead_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 2048
 
 # ── Execution layer ───────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ wingman_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 1024
 
 # ── Execution layer ───────────────────────────────────────────────────────────

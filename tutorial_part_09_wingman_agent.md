@@ -183,7 +183,7 @@ class WingmanAgentNode(Node):
         # ── Parameters ────────────────────────────────────────────
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
-        self.declare_parameter('model', 'qwen2.5-coder:3b')
+        self.declare_parameter('model', 'qwen3.5:2b')
         self.declare_parameter('num_ctx', 2048)  # raised: 1024 too small for system prompt
 
         host    = self.get_parameter('ollama_host').value

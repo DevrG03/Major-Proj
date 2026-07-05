@@ -13,7 +13,7 @@ This tutorial walks you through building the complete infrastructure for a two-d
 - PX4 SITL compiled with the GCC 15 compatibility workaround
 - `px4_msgs` built against ROS2 Lyrical
 - MicroXRCE-DDS Agent running to bridge PX4 ↔ ROS2
-- Ollama serving `qwen2.5-coder:3b` locally
+- Ollama serving `qwen3.5:2b` locally
 - Both drone SITL instances launching with correct namespaces
 - A latency benchmark confirming the LLM is fast enough for real-time use
 
@@ -45,7 +45,7 @@ Ubuntu 26.04 LTS (Noble+1)
 │   └── MicroXRCE-DDS Agent (DDS ↔ uORB bridge)
 ├── px4_msgs (ROS2 message definitions for PX4)
 ├── Ollama (local LLM server)
-│   └── qwen2.5-coder:3b model
+│   └── qwen3.5:2b model
 └── Python 3.12+ (system default on Ubuntu 26.04)
 ```
 
@@ -346,9 +346,9 @@ kill $AGENT_PID
 
 ---
 
-## Section 1.7 — Install Ollama and Pull qwen2.5-coder:3b
+## Section 1.7 — Install Ollama and Pull qwen3.5:2b
 
-Ollama serves local LLM models via a simple HTTP API. The `qwen2.5-coder:3b` model is small enough (~2 GB) to run on CPU while being capable enough for structured JSON intent generation.
+Ollama serves local LLM models via a simple HTTP API. The `qwen3.5:2b` model is small enough (~2 GB) to run on CPU while being capable enough for structured JSON intent generation.
 
 ### 1.7.1 Install Ollama
 
@@ -370,7 +370,7 @@ echo "Ollama server started"
 ### 1.7.3 Pull the model
 
 ```bash
-ollama pull qwen2.5-coder:3b
+ollama pull qwen3.5:2b
 ```
 
 > [!NOTE]
@@ -402,12 +402,12 @@ sudo systemctl enable --now ollama
 
 ```bash
 # Check Ollama API is responding
-curl -s http://localhost:11434/api/tags | python3 -m json.tool | grep "qwen2.5-coder"
-# Expected: "name": "qwen2.5-coder:3b"
+curl -s http://localhost:11434/api/tags | python3 -m json.tool | grep "qwen3.5"
+# Expected: "name": "qwen3.5:2b"
 
 # Quick inference test
 curl -s http://localhost:11434/api/generate \
-  -d '{"model":"qwen2.5-coder:3b","prompt":"Say: READY","stream":false}' \
+  -d '{"model":"qwen3.5:2b","prompt":"Say: READY","stream":false}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
 # Expected: READY (or similar short response)
 ```
@@ -566,7 +566,7 @@ This benchmark measures end-to-end LLM response time to confirm the model is fas
 cat << 'EOF' > ~/ollama_benchmark.py
 #!/usr/bin/env python3
 """
-Ollama qwen2.5-coder:3b latency benchmark for drone swarm project.
+Ollama qwen3.5:2b latency benchmark for drone swarm project.
 Tests structured JSON intent generation latency.
 Target: < 2000 ms per response for real-time use.
 """
@@ -578,7 +578,7 @@ import urllib.request
 import urllib.error
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "qwen2.5-coder:3b"
+MODEL = "qwen3.5:2b"
 NUM_RUNS = 5
 
 SYSTEM_PROMPT = """You are a drone swarm tactical coordinator.
@@ -698,7 +698,7 @@ python3 ~/ollama_benchmark.py
 
 ```
 ============================================================
-Ollama Latency Benchmark -- qwen2.5-coder:3b
+Ollama Latency Benchmark -- qwen3.5:2b
 Target: < 2000 ms per response
 Runs per prompt: 5
 ============================================================
@@ -723,7 +723,7 @@ SUMMARY
 > [!TIP]
 > If average latency exceeds 2000 ms on CPU, either:
 > 1. Install CUDA and run `ollama serve` with GPU (`nvidia-smi` to check), or
-> 2. Switch to `qwen2.5-coder:1.5b` (smaller, faster, slightly less accurate)
+> 2. Switch to `qwen3.5:1.5b` (smaller, faster, slightly less accurate)
 
 ---
 
@@ -753,8 +753,8 @@ which MicroXRCEAgent &>/dev/null && echo "OK" || echo "FAIL"
 echo -n "[6] Ollama running:       "
 curl -s http://localhost:11434/api/tags &>/dev/null && echo "OK" || echo "FAIL"
 
-echo -n "[7] qwen2.5-coder:3b:    "
-curl -s http://localhost:11434/api/tags | grep -q "qwen2.5-coder" && echo "OK" || echo "FAIL"
+echo -n "[7] qwen3.5:2b:    "
+curl -s http://localhost:11434/api/tags | grep -q "qwen3.5" && echo "OK" || echo "FAIL"
 
 echo -n "[8] GCC 12 available:     "
 gcc-12 --version &>/dev/null && echo "OK" || echo "FAIL"

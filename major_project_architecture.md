@@ -90,7 +90,7 @@ Cross-PC topics (DDS bridged over WiFi, automatic with same ROS_DOMAIN_ID):
 | Python | 3.12+ |
 | Pydantic | v2 (with `model_rebuild()`) |
 | Ollama | latest |
-| SLM model | `qwen2.5-coder:3b` |
+| SLM model | `qwen3.5:2b` |
 
 ### 2.2 PC-1 Only
 
@@ -398,7 +398,7 @@ lead_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 2048
     loop_pause_sec: 0.5
 ```
@@ -427,7 +427,7 @@ wingman_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 1024
     loop_pause_sec: 0.5
 ```
@@ -1046,7 +1046,7 @@ lead_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 2048
     loop_pause_sec: 0.5
 
@@ -1067,7 +1067,7 @@ wingman_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 1024
     loop_pause_sec: 0.5
 
@@ -1213,10 +1213,10 @@ Edit both config files:
 ```yaml
 lead_agent_node:
   ros__parameters:
-    model: "qwen2.5-coder:7b"
+    model: "qwen3.5:7b"
     num_ctx: 4096
 ```
-Pull first: `ollama pull qwen2.5-coder:7b`. Larger models improve accuracy, increase latency.
+Pull first: `ollama pull qwen3.5:7b`. Larger models improve accuracy, increase latency.
 
 ---
 
@@ -1304,7 +1304,7 @@ Quick wins in order of impact:
 | Change | Estimated Speedup | Trade-off |
 |---|---|---|
 | Add GPU to Ollama host | ~10× | Cost |
-| Use `qwen2.5-coder:1.5b` | ~2× | Lower accuracy |
+| Use `qwen3.5:1.5b` | ~2× | Lower accuracy |
 | Reduce `num_ctx` Lead: 2048→1536 | ~1.3× | Less history |
 | Reduce `num_ctx` Wingman: 1024→768 | ~1.2× | Less history |
 | Implement MiniSpec-like compact syntax | ~3.5× | Implementation effort, debug complexity |
@@ -1358,7 +1358,7 @@ POST http://<host>:11434/api/generate
 Content-Type: application/json
 
 {
-  "model": "qwen2.5-coder:3b",
+  "model": "qwen3.5:2b",
   "prompt": "<full context prompt>",
   "system": "<system prompt>",
   "stream": false,
@@ -1367,7 +1367,7 @@ Content-Type: application/json
 
 Response:
 {
-  "model": "qwen2.5-coder:3b",
+  "model": "qwen3.5:2b",
   "response": "{\"tool\":\"move\",\"params\":{\"direction\":\"N\",\"distance\":50}}",
   "done": true,
   "total_duration": 4821000000,  // nanoseconds

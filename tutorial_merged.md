@@ -486,12 +486,12 @@ sleep 5
 
 ```bash
 # [PC-1] Pull the SLM model (downloads ~2GB)
-ollama pull qwen2.5-coder:3b
+ollama pull qwen3.5:2b
 ```
 
 ```bash
 # [PC-1] Test the model runs
-ollama run qwen2.5-coder:3b "Reply with only: OK"
+ollama run qwen3.5:2b "Reply with only: OK"
 # Should print: OK (may take 30-60s on first run — model loads into RAM)
 ```
 
@@ -509,7 +509,7 @@ sudo systemctl restart ollama
 **Verify Ollama API is reachable:**
 ```bash
 curl http://localhost:11434/api/tags
-# Should return JSON listing the qwen2.5-coder:3b model
+# Should return JSON listing the qwen3.5:2b model
 ```
 
 ---
@@ -597,7 +597,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 sudo systemctl enable ollama
 sudo systemctl start ollama
 sleep 5
-ollama pull qwen2.5-coder:3b
+ollama pull qwen3.5:2b
 sudo systemctl edit ollama
 # Add: [Service]
 #      Environment="OLLAMA_HOST=0.0.0.0:11434"
@@ -1023,7 +1023,7 @@ TEST_COMMANDS = {
 def run_inference(prompt, host="localhost", port=11434):
     url = f"http://{host}:{port}/api/generate"
     payload = {
-        "model": "qwen2.5-coder:3b",
+        "model": "qwen3.5:2b",
         "prompt": f"Command: {prompt}",
         "system": SYSTEM_PROMPT,
         "stream": False,
@@ -1135,7 +1135,7 @@ python3 ~/major_ws/src/major_project/benchmark/latency_benchmark.py 192.168.1.10
 |---|---|
 | < 400ms | Synchronous NLU — SLM runs in the ROS2 callback, simple architecture |
 | 400–800ms | Async NLU — SLM runs in background thread, ROS2 publishes last-known setpoint at 10Hz independently |
-| > 800ms | Async NLU + reduce model context (`num_ctx=256`) or use `qwen2.5-coder:1.5b` |
+| > 800ms | Async NLU + reduce model context (`num_ctx=256`) or use `qwen3.5:1.5b` |
 
 **If async NLU is needed** (add this to your notes — we implement it in Part 9):
 - The NLU node has two threads: inference thread (slow, runs SLM) and setpoint thread (fast, 10Hz)
@@ -1564,7 +1564,7 @@ logger = logging.getLogger(__name__)
 
 class OllamaClient:
     def __init__(self, host: str = "localhost", port: int = 11434,
-                 model: str = "qwen2.5-coder:3b",
+                 model: str = "qwen3.5:2b",
                  num_ctx: int = 2048, max_retries: int = 3,
                  timeout: float = 15.0):
         self.url = f"http://{host}:{port}/api/generate"
@@ -4071,7 +4071,7 @@ class LeadAgentNode(Node):
         # ── Parameters ─────────────────────────────────────────────
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
-        self.declare_parameter('model', 'qwen2.5-coder:3b')
+        self.declare_parameter('model', 'qwen3.5:2b')
         self.declare_parameter('num_ctx', 2048)
         self.declare_parameter('loop_pause_sec', 0.5)
 
@@ -4464,7 +4464,7 @@ class WingmanAgentNode(Node):
 
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
-        self.declare_parameter('model', 'qwen2.5-coder:3b')
+        self.declare_parameter('model', 'qwen3.5:2b')
         self.declare_parameter('num_ctx', 1024)
         self.declare_parameter('loop_pause_sec', 0.5)
 
@@ -4783,7 +4783,7 @@ lead_agent_node:
   ros__parameters:
     ollama_host: "localhost"
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 2048
     loop_pause_sec: 0.5    # pause between inference cycles
 
@@ -4810,7 +4810,7 @@ wingman_agent_node:
   ros__parameters:
     ollama_host: "localhost"   # PC-2's own Ollama instance
     ollama_port: 11434
-    model: "qwen2.5-coder:3b"
+    model: "qwen3.5:2b"
     num_ctx: 1024              # smaller than Lead to leave headroom on PC-2
     loop_pause_sec: 0.5
 
@@ -5244,7 +5244,7 @@ VOICE/TEXT GOAL
 │  │  [WINGMAN MSGS][RECENT ACTIONS]  │   │
 │  └──────────────────┬───────────────┘   │
 │                     │ build_prompt()    │
-│              OllamaClient              │  ← qwen2.5-coder:3b
+│              OllamaClient              │  ← qwen3.5:2b
 │                     │ tool call JSON   │
 │          LeadToolRegistry.execute()    │  ← ToolRegistry
 │          ┌──────────┼──────────────┐  │

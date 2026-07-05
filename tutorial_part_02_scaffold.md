@@ -601,7 +601,7 @@ source ~/.bashrc
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve &
 sleep 3
-ollama pull qwen2.5-coder:3b
+ollama pull qwen3.5:2b
 ```
 
 ### 2.7.4 Configure CycloneDDS for WiFi — PC-1

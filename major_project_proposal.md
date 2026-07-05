@@ -476,12 +476,12 @@ A conference paper (target: IEEE ICRA 2027 or similar) reporting:
 - [ ] Install Ollama on PC-1:
   ```bash
   curl -fsSL https://ollama.ai/install.sh | sh
-  ollama pull qwen2.5-coder:3b
+  ollama pull qwen3.5:2b
   ```
 - [ ] Install Ollama on PC-2 (same steps)
 - [ ] Verify both can run model locally:
   ```bash
-  ollama run qwen2.5-coder:3b "say hello"
+  ollama run qwen3.5:2b "say hello"
   ```
 
 **Afternoon (4h): Latency benchmark script**
@@ -506,7 +506,7 @@ A conference paper (target: IEEE ICRA 2027 or similar) reporting:
 
   def measure_ollama_latency(prompt, host="localhost"):
       url = f"http://{host}:11434/api/generate"
-      payload = {"model": "qwen2.5-coder:3b", "prompt": prompt,
+      payload = {"model": "qwen3.5:2b", "prompt": prompt,
                  "system": SYSTEM_PROMPT, "stream": False, "format": "json"}
       t0 = time.perf_counter()
       r = requests.post(url, json=payload)
@@ -914,7 +914,7 @@ A conference paper (target: IEEE ICRA 2027 or similar) reporting:
   lead_nlu:
     ollama_host: localhost
     ollama_port: 11434
-    model: qwen2.5-coder:3b
+    model: qwen3.5:2b
     num_ctx: 2048
     inference_timeout: 10.0
     confidence_gate:
