@@ -4072,7 +4072,7 @@ class LeadAgentNode(Node):
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen3.5:2b')
-        self.declare_parameter(\'num_ctx\', 8192)
+        self.declare_parameter('num_ctx', 8192)
         self.declare_parameter('loop_pause_sec', 0.5)
 
         host    = self.get_parameter('ollama_host').value
@@ -4465,7 +4465,7 @@ class WingmanAgentNode(Node):
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen3.5:2b')
-        self.declare_parameter(\'num_ctx\', 8192)
+        self.declare_parameter('num_ctx', 8192)
         self.declare_parameter('loop_pause_sec', 0.5)
 
         host    = self.get_parameter('ollama_host').value
