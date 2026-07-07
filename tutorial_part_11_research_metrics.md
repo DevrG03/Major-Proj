@@ -137,21 +137,31 @@ To save you from manually parsing SQLite databases, create this Python script in
 cat << 'EOF' > ~/major_ws/extract_metrics.py
 #!/usr/bin/env python3
 import sys
+import os
+import glob
 import sqlite3
 
 def extract_bag(bag_path):
-    import os
     print(f"Analyzing ROS 2 Bag: {bag_path}")
     
-    # Connect to the SQLite bag database
-    bag_name = bag_path.rstrip('/').split('/')[-1]
-    db_path = f"{bag_path}/{bag_name}_0.db3"
+    # Find the actual .db3 file in the directory
+    db_files = glob.glob(os.path.join(bag_path, "*.db3"))
     
-    if not os.path.exists(db_path):
-        print(f"ERROR: Could not find SQLite database at {db_path}")
-        print("Note: If your ROS 2 version uses 'mcap' as the default format, you must record using '-s sqlite3'")
-        print("Example: ros2 bag record -s sqlite3 -o swarm_test_01 --topics ...")
+    if not db_files:
+        print("ERROR: No .db3 file found in the bag folder!")
+        print("Did you remember to record with '-s sqlite3'?")
+        print(f"Files in folder: {os.listdir(bag_path)}")
         return
+        
+    # Pick the largest .db3 file (to avoid picking up empty 0-byte ghost files)
+    db_path = max(db_files, key=os.path.getsize)
+    
+    if os.path.getsize(db_path) == 0:
+        print(f"ERROR: The database file {db_path} is 0 bytes (empty).")
+        print("This usually means it was created by accident or the recording failed.")
+        return
+
+    print(f"Opening database: {db_path}")
 
     try:
         conn = sqlite3.connect(db_path)
@@ -161,28 +171,39 @@ def extract_bag(bag_path):
 
     cursor = conn.cursor()
     
-    # Get topics
-    cursor.execute("SELECT id, name, type FROM topics")
-    
-    # 1. Count Communication Messages
-    print("\n--- Communication Efficiency ---")
-    cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/lead_to_wingman'")
-    lead_to_wingman = cursor.fetchone()[0]
-    cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/wingman_to_lead'")
-    wingman_to_lead = cursor.fetchone()[0]
-    print(f"Total Envelope Messages Exchanged: {lead_to_wingman + wingman_to_lead}")
-    print(f"Lead -> Wingman: {lead_to_wingman}")
-    print(f"Wingman -> Lead: {wingman_to_lead}")
+    try:
+        # Check if topics table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='topics'")
+        if not cursor.fetchone():
+            print("ERROR: Database exists but has no 'topics' table. Schema mismatch?")
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
+            print(f"Tables found: {tables}")
+            return
+            
+        # 1. Count Communication Messages
+        print("\n--- Communication Efficiency ---")
+        cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/lead_to_wingman'")
+        lead_to_wingman = cursor.fetchone()[0]
+        cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/wingman_to_lead'")
+        wingman_to_lead = cursor.fetchone()[0]
+        print(f"Total Envelope Messages Exchanged: {lead_to_wingman + wingman_to_lead}")
+        print(f"Lead -> Wingman: {lead_to_wingman}")
+        print(f"Wingman -> Lead: {wingman_to_lead}")
 
-    # 2. Check Health Fallbacks
-    print("\n--- Safety Fallbacks ---")
-    cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/health'")
-    health_msgs = cursor.fetchone()[0]
-    print(f"Total Health Ticks Logged: {health_msgs}")
-    print("To check exact RTL counts, parse the /agent/health payload directly.")
+        # 2. Check Health Fallbacks
+        print("\n--- Safety Fallbacks ---")
+        cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/health'")
+        health_msgs = cursor.fetchone()[0]
+        print(f"Total Health Ticks Logged: {health_msgs}")
+        print("To check exact RTL counts, parse the /agent/health payload directly.")
 
-    print("\nExtraction Complete! Use this data for your research charts.")
-    conn.close()
+        print("\nExtraction Complete! Use this data for your research charts.")
+        
+    except sqlite3.OperationalError as e:
+        print(f"SQLite Error: {e}")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
