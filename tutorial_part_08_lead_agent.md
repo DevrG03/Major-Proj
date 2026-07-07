@@ -260,7 +260,7 @@ class LeadAgentNode(Node):
         self.pub_wingman_msg    = self.create_publisher(
             String, '/agent/lead_to_wingman', 10)
         self.pub_health         = self.create_publisher(
-            String, '/agent/health', 10)
+            String, '/agent/health', RELIABLE_QOS)
 
         # ── Subscriptions ─────────────────────────────────────────
         self.create_subscription(

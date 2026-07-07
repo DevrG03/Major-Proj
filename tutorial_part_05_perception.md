@@ -267,10 +267,10 @@ class LeadCameraDetectionNode(Node):
 
         # ── Publishers ────────────────────────────────────────────────────────
         self._det_pub = self.create_publisher(
-            String, "/camera_0/detections", BEST_EFFORT_QOS
+            String, "/camera_0/detections", 10
         )
         self._vec_pub = self.create_publisher(
-            String, "/camera_0/obstacle_vector", BEST_EFFORT_QOS
+            String, "/camera_0/obstacle_vector", 10
         )
 
         # ── Rate limiter state ────────────────────────────────────────────────
