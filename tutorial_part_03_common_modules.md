@@ -689,7 +689,7 @@ class BaseToolRegistry:
                         f"[GUARDRAIL] Already airborne at {current_alt:.1f}m. "
                         "Call move() or hover() — do NOT call takeoff while flying.")
 
-        altitude = float(params.get('altitude', 5.0))
+        altitude = float(params.get('altitude') or params.get('altitude_m', 5.0))
         altitude = max(1.0, min(30.0, altitude))
         # Bug fix #1: publish 'altitude_m' — commander reads intent.get('altitude_m')
         self._publish_intent({
@@ -717,9 +717,9 @@ class BaseToolRegistry:
         }
         raw_dir   = str(params.get('direction', 'N')).upper().strip()
         direction = _abbrev.get(raw_dir, raw_dir.lower())
-        distance  = float(params.get('distance', 10.0))
+        distance  = float(params.get('distance') or params.get('distance_m', 10.0))
         distance  = max(1.0, min(100.0, distance))
-        altitude  = params.get('altitude', None)
+        altitude  = params.get('altitude') or params.get('altitude_m')
 
         # Bug fix #2: publish 'distance_m' — commander reads intent.get('distance_m')
         # Bug fix #5: publish 'altitude_m' — commander reads intent.get('altitude_m')
