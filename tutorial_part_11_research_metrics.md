@@ -132,7 +132,9 @@ Once the drones land, go back to the terminal from Step 2 and press `Ctrl+C` to 
 To save you from manually parsing SQLite databases, create this Python script in your workspace to instantly rip the communication and health metrics from your recorded bags.
 
 **File:** `extract_metrics.py`
-```python
+
+```bash
+cat << 'EOF' > ~/major_ws/extract_metrics.py
 #!/usr/bin/env python3
 import sys
 import sqlite3
@@ -178,9 +180,12 @@ if __name__ == "__main__":
         print("Usage: python3 extract_metrics.py <path_to_rosbag_folder>")
         sys.exit(1)
     extract_bag(sys.argv[1])
+EOF
+chmod +x ~/major_ws/extract_metrics.py
 ```
 
 **Run it using:**
 ```bash
-python3 extract_metrics.py swarm_test_01
+cd ~/major_ws
+./extract_metrics.py swarm_test_01
 ```
