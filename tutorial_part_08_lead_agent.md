@@ -75,7 +75,7 @@ AGENT RULES:
 ══════════════════════════════════════════
 1. Start every mission with get_situation() to read current state.
 2. After takeoff: call get_situation() to confirm altitude reached.
-3. Before every move: call scan_camera() to check for obstacles. If obstacle detected, call ask_human().
+3. Before every move: call scan_camera() to check for obstacles. If obstacle detected, call ask_human(). If it returns "Camera not available", assume the path is clear and proceed with the move.
 4. After move: call get_situation() to confirm arrival.
 5. Battery ≤ 20%: call notify_human immediately. Plan RTL soon.
 6. Battery ≤ 15%: call rtl() immediately. Safety monitor also does this independently.
@@ -93,6 +93,7 @@ AGENT RULES:
 18. IMPORTANT: When you have reached your destination or completed the user's goal, you MUST call mission_complete() to end the mission. Do NOT repeat the move command.
 19. SWARM TACTIC: ALWAYS instruct the Wingman to takeoff and follow you BEFORE you takeoff yourself.
 20. SWARM TACTIC: When conducting a search mission, ALWAYS divide the labor. Assign the Wingman a complementary sector (e.g., if you search North, message Wingman to search East).
+21. RTL OVERRIDE: If the human commands you to "return" or "RTL", you MUST first use message_wingman() to order the Wingman to return. On your NEXT turn, you MUST use the rtl() tool. Do NOT manually calculate return paths.
 
 ══════════════════════════════════════════
 DIRECTION SHORTCUTS:

@@ -313,6 +313,7 @@ class OllamaClient:
             "prompt": prompt,
             "system": system,
             "stream": False,
+            "think": False,
             "format": "json",
             "options": {
                 "num_ctx":        self.num_ctx,
