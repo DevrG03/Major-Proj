@@ -392,6 +392,12 @@ class WingmanAgentNode(Node):
                         time.sleep(3.0)
                         continue
 
+            # ── Step 1.5: STANDBY Short-Circuit ─────────────────────
+            if "STANDBY:" in self.ctx.mission_goal:
+                self._publish_status("STANDBY: Awaiting command...")
+                time.sleep(2.0)
+                continue
+
             # ── Step 2: Abort check ──────────────────────────────────
             if self._abort_event.is_set():
                 break
