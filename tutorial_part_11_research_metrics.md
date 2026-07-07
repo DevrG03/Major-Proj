@@ -94,3 +94,93 @@ After the mission, use ROS 2 bag tools or Python's `rosbags` library to extract 
 1. Extract `/fmu/out/vehicle_odometry` to compute **Minimum Separation Distance ($D_{min}$)** and prove zero collisions.
 2. Extract `/agent/lead_to_wingman` to count **Communication Efficiency**.
 3. Extract `/drone_0/situation` to measure **End-to-End Execution Time** by comparing the timestamp of the goal received versus the final pose.
+
+---
+
+## 11.5 Step-by-Step Execution Guide
+
+Follow this strict workflow to generate the data for your paper.
+
+### Step 1: Boot the Swarm
+Follow your normal deployment sequence from Part 10 to get the swarm fully online.
+1. Launch Drone-0 and Drone-1 SITL.
+2. Start the Micro XRCE-DDS Agent.
+3. **Optional:** Start the Gazebo Camera Bridge if you are testing vision scenarios.
+4. Launch the Lead Stack on PC-1.
+5. Launch the Wingman Stack on PC-2.
+
+### Step 2: Start the Data Logger
+Open a completely new terminal on PC-1. Source your ROS 2 environment, and run the atomic bag record command:
+```bash
+ros2 bag record -o swarm_test_01 /drone_0/situation /drone_1/situation /camera_0/detections /camera_1/detections /agent/health /agent/lead_to_wingman /agent/wingman_to_lead /fmu/out/vehicle_odometry /px4_1/fmu/out/vehicle_odometry
+```
+*(Leave this terminal running in the background!)*
+
+### Step 3: Run Your Experimental Missions
+Give your swarm 3 different types of voice commands to test its capabilities:
+- **Test A (Nominal):** *"Fly 10 meters north and have the wingman hold position."* (This tests pure execution time and communication efficiency).
+- **Test B (Vision/Dynamic):** Induce a scenario where the camera spots a person or object, forcing the SLM to dynamically alter its planned path.
+- **Test C (Safety Fallback):** Intentionally give a malicious command like *"Fly 500 meters down"* or trigger a low battery state to prove the deterministic `safety_monitor` overrides the SLM and forces an RTL.
+
+### Step 4: Stop Recording
+Once the drones land, go back to the terminal from Step 2 and press `Ctrl+C` to stop the bag recording. It will have created a folder named `swarm_test_01`.
+
+---
+
+## 11.6 Automated Python Extraction Script
+
+To save you from manually parsing SQLite databases, create this Python script in your workspace to instantly rip the communication and health metrics from your recorded bags.
+
+**File:** `extract_metrics.py`
+```python
+#!/usr/bin/env python3
+import sys
+import sqlite3
+
+def extract_bag(bag_path):
+    print(f"Analyzing ROS 2 Bag: {bag_path}")
+    
+    # Connect to the SQLite bag database
+    db_path = f"{bag_path}/{bag_path.split('/')[-1]}_0.db3"
+    try:
+        conn = sqlite3.connect(db_path)
+    except Exception as e:
+        print(f"Error opening bag: {e}")
+        return
+
+    cursor = conn.cursor()
+    
+    # Get topics
+    cursor.execute("SELECT id, name, type FROM topics")
+    
+    # 1. Count Communication Messages
+    print("\n--- Communication Efficiency ---")
+    cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/lead_to_wingman'")
+    lead_to_wingman = cursor.fetchone()[0]
+    cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/wingman_to_lead'")
+    wingman_to_lead = cursor.fetchone()[0]
+    print(f"Total Envelope Messages Exchanged: {lead_to_wingman + wingman_to_lead}")
+    print(f"Lead -> Wingman: {lead_to_wingman}")
+    print(f"Wingman -> Lead: {wingman_to_lead}")
+
+    # 2. Check Health Fallbacks
+    print("\n--- Safety Fallbacks ---")
+    cursor.execute("SELECT count(*) FROM messages JOIN topics ON messages.topic_id = topics.id WHERE topics.name = '/agent/health'")
+    health_msgs = cursor.fetchone()[0]
+    print(f"Total Health Ticks Logged: {health_msgs}")
+    print("To check exact RTL counts, parse the /agent/health payload directly.")
+
+    print("\nExtraction Complete! Use this data for your research charts.")
+    conn.close()
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 extract_metrics.py <path_to_rosbag_folder>")
+        sys.exit(1)
+    extract_bag(sys.argv[1])
+```
+
+**Run it using:**
+```bash
+python3 extract_metrics.py swarm_test_01
+```
