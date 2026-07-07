@@ -306,7 +306,7 @@ class LeadAgentNode(Node):
             has_obs = False
             if hasattr(self, 'camera_summary') and self.camera_summary:
                 cam = self.camera_summary.lower()
-                if 'no detection' not in cam and 'clear' not in cam and 'not available' not in cam and 'none' not in cam:
+                if 'no detection' not in cam and 'clear' not in cam and 'not available' not in cam:
                     has_obs = True
                     
             if has_obs:
@@ -448,13 +448,6 @@ class LeadAgentNode(Node):
                             f"Waiting for human ({self._human_wait_cycles * 3}s elapsed)…")
                         time.sleep(3.0)
                         continue   # do not call SLM while waiting
-
-            # ── Step 1.5: STANDBY Short-Circuit ─────────────────────
-            # Small SLMs hallucinate if forced to idle in a loop.
-            if "STANDBY:" in self.ctx.mission_goal:
-                self._publish_status("STANDBY: Awaiting command...")
-                time.sleep(2.0)
-                continue
 
             # ── Step 2: Handle Wingman query ─────────────────────────
             if self._wingman_query_pending:

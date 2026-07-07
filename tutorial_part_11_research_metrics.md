@@ -217,5 +217,24 @@ chmod +x ~/major_ws/extract_metrics.py
 **Run it using:**
 ```bash
 cd ~/major_ws
-./extract_metrics.py swarm_test_01
+python3 extract_metrics.py swarm_test_01
 ```
+
+---
+
+## 11.7 Advanced Extraction (CSV Export)
+
+If you need to generate charts for your paper, you can use the advanced `extract_all_metrics.py` script provided in your `CODE/` directory.
+
+This script deserializes the raw binary payloads of the SQLite database to compute complex metrics like **Minimum Separation Distance** and exports everything into `.csv` files you can easily plot in Python or Excel.
+
+**To run it, you must source your ROS 2 workspace first:**
+```bash
+source /opt/ros/lyrical/setup.bash
+source ~/major_ws/install/setup.bash
+python3 ~/Downloads/CODE/CODE/extract_all_metrics.py swarm_test_01
+```
+
+It will output two files:
+1. `swarm_test_01_metrics_summary.csv` (High-level totals and MSR data)
+2. `swarm_test_01_odometry_timeseries.csv` (Time, XYZ coords, and instantaneous separation distance for plotting)
