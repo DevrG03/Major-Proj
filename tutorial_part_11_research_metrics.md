@@ -77,7 +77,7 @@ To write your paper, you cannot rely on terminal printouts. You must mathematica
 Run this command in a background terminal before initiating any test flights. It records all vital telemetry, SLM outputs, health statuses, and visual detections required to compute the metrics above.
 
 ```bash
-ros2 bag record \
+ros2 bag record -o swarm_test_01 \
   /drone_0/situation \
   /drone_1/situation \
   /camera_0/detections \
