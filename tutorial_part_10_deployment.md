@@ -475,6 +475,25 @@ MicroXRCEAgent udp4 -p 8888
 
 ---
 
+### STEP 3.5 — PC-1: Start Gazebo Camera Bridge (Optional)
+
+If you launched SITL using a drone model with a camera (e.g., `x500_mono_cam`), the Gazebo video feed does not cross over to ROS 2 automatically. You must run the `ros_gz_bridge` to pipe the images to our python nodes.
+
+```bash
+# Terminal 4
+source ~/major_ws/install/setup.bash
+ros2 run ros_gz_bridge parameter_bridge \
+  /world/default/model/x500_mono_cam_0/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
+  /world/default/model/x500_mono_cam_1/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
+  --ros-args \
+  -r /world/default/model/x500_mono_cam_0/link/camera_link/sensor/imager/image:=/camera/image_raw \
+  -r /world/default/model/x500_mono_cam_1/link/camera_link/sensor/imager/image:=/px4_1/camera/image_raw
+```
+
+**✅ Gate:** Your `camera_detection_node` instances will start processing frames and logging detections. If you skip this, the nodes will gracefully fall back to the 1Hz watchdog `none` publishing.
+
+---
+
 ### STEP 4 — PC-1: Launch Lead Stack
 
 ```bash
