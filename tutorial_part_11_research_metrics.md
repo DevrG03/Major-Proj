@@ -77,7 +77,7 @@ To write your paper, you cannot rely on terminal printouts. You must mathematica
 Run this command in a background terminal before initiating any test flights. It records all vital telemetry, SLM outputs, health statuses, and visual detections required to compute the metrics above.
 
 ```bash
-ros2 bag record -o swarm_test_01 \
+ros2 bag record -o swarm_test_01 --topics \
   /drone_0/situation \
   /drone_1/situation \
   /camera_0/detections \
@@ -112,7 +112,7 @@ Follow your normal deployment sequence from Part 10 to get the swarm fully onlin
 ### Step 2: Start the Data Logger
 Open a completely new terminal on PC-1. Source your ROS 2 environment, and run the atomic bag record command:
 ```bash
-ros2 bag record -o swarm_test_01 /drone_0/situation /drone_1/situation /camera_0/detections /camera_1/detections /agent/health /agent/lead_to_wingman /agent/wingman_to_lead /fmu/out/vehicle_odometry /px4_1/fmu/out/vehicle_odometry
+ros2 bag record -o swarm_test_01 --topics /drone_0/situation /drone_1/situation /camera_0/detections /camera_1/detections /agent/health /agent/lead_to_wingman /agent/wingman_to_lead /fmu/out/vehicle_odometry /px4_1/fmu/out/vehicle_odometry
 ```
 *(Leave this terminal running in the background!)*
 
