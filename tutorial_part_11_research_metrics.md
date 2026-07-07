@@ -77,7 +77,7 @@ To write your paper, you cannot rely on terminal printouts. You must mathematica
 Run this command in a background terminal before initiating any test flights. It records all vital telemetry, SLM outputs, health statuses, and visual detections required to compute the metrics above.
 
 ```bash
-ros2 bag record -o swarm_test_01 --topics \
+ros2 bag record -s sqlite3 -o swarm_test_01 --topics \
   /drone_0/situation \
   /drone_1/situation \
   /camera_0/detections \
@@ -112,7 +112,7 @@ Follow your normal deployment sequence from Part 10 to get the swarm fully onlin
 ### Step 2: Start the Data Logger
 Open a completely new terminal on PC-1. Source your ROS 2 environment, and run the atomic bag record command:
 ```bash
-ros2 bag record -o swarm_test_01 --topics /drone_0/situation /drone_1/situation /camera_0/detections /camera_1/detections /agent/health /agent/lead_to_wingman /agent/wingman_to_lead /fmu/out/vehicle_odometry /px4_1/fmu/out/vehicle_odometry
+ros2 bag record -s sqlite3 -o swarm_test_01 --topics /drone_0/situation /drone_1/situation /camera_0/detections /camera_1/detections /agent/health /agent/lead_to_wingman /agent/wingman_to_lead /fmu/out/vehicle_odometry /px4_1/fmu/out/vehicle_odometry
 ```
 *(Leave this terminal running in the background!)*
 
@@ -140,10 +140,19 @@ import sys
 import sqlite3
 
 def extract_bag(bag_path):
+    import os
     print(f"Analyzing ROS 2 Bag: {bag_path}")
     
     # Connect to the SQLite bag database
-    db_path = f"{bag_path}/{bag_path.split('/')[-1]}_0.db3"
+    bag_name = bag_path.rstrip('/').split('/')[-1]
+    db_path = f"{bag_path}/{bag_name}_0.db3"
+    
+    if not os.path.exists(db_path):
+        print(f"ERROR: Could not find SQLite database at {db_path}")
+        print("Note: If your ROS 2 version uses 'mcap' as the default format, you must record using '-s sqlite3'")
+        print("Example: ros2 bag record -s sqlite3 -o swarm_test_01 --topics ...")
+        return
+
     try:
         conn = sqlite3.connect(db_path)
     except Exception as e:
