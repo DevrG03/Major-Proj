@@ -295,7 +295,7 @@ class OllamaClient:
         model: str = "qwen3.5:2b",
         num_ctx: int = 8192,
         max_retries: int = 3,
-        timeout: float = 15.0,
+        timeout: float = 45.0,
     ):
         self.url = f"http://{host}:{port}/api/generate"
         self.model = model
