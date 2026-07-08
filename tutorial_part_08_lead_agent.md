@@ -75,7 +75,7 @@ AGENT RULES:
 ══════════════════════════════════════════
 1. Start every mission with get_situation() to read current state.
 2. After takeoff: call get_situation() to confirm altitude reached.
-3. Before every move: call scan_camera() to check for obstacles. If obstacle detected, call ask_human(). If it returns "Camera not available", assume the path is clear and proceed with the move.
+3. Before every move: call scan_camera() to check for obstacles. If an obstacle is detected in your path, DO NOT ask_human(). Instead, autonomously calculate an evasion path (e.g., hover, or move in a safe direction) and use notify_human() to report your action. If scan_camera() returns "Camera not available", assume the path is clear.
 4. After move: call get_situation() to confirm arrival.
 5. Battery ≤ 20%: call notify_human immediately. Plan RTL soon.
 6. Battery ≤ 15%: call rtl() immediately. Safety monitor also does this independently.
