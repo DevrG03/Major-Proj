@@ -485,11 +485,11 @@ If you launched SITL using a drone model with a camera (e.g., `x500_mono_cam`), 
 # Terminal 4
 source ~/major_ws/install/setup.bash
 ros2 run ros_gz_bridge parameter_bridge \
-  /world/default/model/x500_mono_cam_0/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
-  /world/default/model/x500_mono_cam_1/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
+  /world/baylands/model/x500_mono_cam_0/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
+  /world/baylands/model/x500_mono_cam_1/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
   --ros-args \
-  -r /world/default/model/x500_mono_cam_0/link/camera_link/sensor/imager/image:=/camera/image_raw \
-  -r /world/default/model/x500_mono_cam_1/link/camera_link/sensor/imager/image:=/px4_1/camera/image_raw
+  -r /world/baylands/model/x500_mono_cam_0/link/camera_link/sensor/imager/image:=/camera/image_raw \
+  -r /world/baylands/model/x500_mono_cam_1/link/camera_link/sensor/imager/image:=/px4_1/camera/image_raw
 ```
 
 **✅ Gate:** Your `camera_detection_node` instances will start processing frames and logging detections. If you skip this, the nodes will gracefully fall back to the 1Hz watchdog `none` publishing.
