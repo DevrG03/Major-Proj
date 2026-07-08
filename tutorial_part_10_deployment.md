@@ -432,6 +432,7 @@ source install/setup.bash
 ```bash
 cd ~/PX4-Autopilot
 PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam \
+PX4_GZ_WORLD=baylands \
 PX4_GZ_MODEL_POSE="0,0,0,0,0,0" PX4_UXRCE_DDS_KEY=1 \
 ./build/px4_sitl_default/bin/px4 -i 0 -d
 ```
@@ -445,6 +446,7 @@ PX4_GZ_MODEL_POSE="0,0,0,0,0,0" PX4_UXRCE_DDS_KEY=1 \
 ```bash
 cd ~/PX4-Autopilot
 PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam \
+PX4_GZ_WORLD=baylands \
 PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 \
 ./build/px4_sitl_default/bin/px4 -i 1 -d
 ```
@@ -857,8 +859,8 @@ export CYCLONEDDS_URI=~/cyclonedds.xml
 ### Step 2: Launch PC1 (The Physical World)
 Open four terminals on PC1 (exporting variables in each):
 - Terminal 1: `MicroXRCEAgent udp4 -p 8888`
-- Terminal 2: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_UXRCE_DDS_KEY=1 ./build/px4_sitl_default/bin/px4 -i 0 -d`
-- Terminal 3: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 ./build/px4_sitl_default/bin/px4 -i 1 -d`
+- Terminal 2: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_GZ_WORLD=baylands PX4_UXRCE_DDS_KEY=1 ./build/px4_sitl_default/bin/px4 -i 0 -d`
+- Terminal 3: `PX4_SYS_AUTOSTART=4010 PX4_GZ_MODEL=x500_mono_cam PX4_GZ_WORLD=baylands PX4_GZ_MODEL_POSE="5,0,0,0,0,0" PX4_UXRCE_DDS_KEY=2 ./build/px4_sitl_default/bin/px4 -i 1 -d`
 - Terminal 4: `ros2 run major_project lead_px4_commander` & `ros2 run major_project wingman_px4_commander` (or use a custom launch file that only launches non-Agent nodes).
 
 ### Step 3: Launch PC2 (The AI Brains)
