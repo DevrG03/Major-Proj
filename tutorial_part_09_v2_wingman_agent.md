@@ -137,7 +137,7 @@ import time
 from typing import TypedDict, Annotated, Sequence, Dict, Any
 import operator
 from langgraph.graph import StateGraph, END
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 # QoS matching the WingmanIntentBridgeNode and monitor subscribers

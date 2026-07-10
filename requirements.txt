@@ -1,6 +1,7 @@
 # LangGraph Agent Dependencies
 langchain-core
 langchain-community
+langchain-ollama
 langgraph
 pydantic
 
