@@ -145,18 +145,18 @@ RELIABLE_QOS = QoSProfile(
 # ---------------------------------------------------------------------------
 
 DIRECTION_OFFSETS: dict[str, tuple[float, float]] = {
-    "north":     ( 1.0,   0.0),
-    "south":     (-1.0,   0.0),
-    "east":      ( 0.0,   1.0),
-    "west":      ( 0.0,  -1.0),
+    "north":     ( 0.0,   1.0),
+    "south":     ( 0.0,  -1.0),
+    "east":      ( 1.0,   0.0),
+    "west":      (-1.0,   0.0),
     "northeast": ( 0.707, 0.707),
-    "northwest": ( 0.707,-0.707),
-    "southeast": (-0.707, 0.707),
+    "northwest": (-0.707, 0.707),
+    "southeast": ( 0.707,-0.707),
     "southwest": (-0.707,-0.707),
-    "forward":   ( 1.0,   0.0),
-    "backward":  (-1.0,   0.0),
-    "left":      ( 0.0,  -1.0),
-    "right":     ( 0.0,   1.0),
+    "forward":   ( 0.0,   1.0),
+    "backward":  ( 0.0,  -1.0),
+    "left":      (-1.0,   0.0),
+    "right":     ( 1.0,   0.0),
 }
 
 _DEFAULT_TAKEOFF_ALT_M: float = 5.0
@@ -760,18 +760,18 @@ RELIABLE_QOS = QoSProfile(
 # ---------------------------------------------------------------------------
 
 DIRECTION_OFFSETS: dict[str, tuple[float, float]] = {
-    "north":     ( 1.0,   0.0),
-    "south":     (-1.0,   0.0),
-    "east":      ( 0.0,   1.0),
-    "west":      ( 0.0,  -1.0),
+    "north":     ( 0.0,   1.0),
+    "south":     ( 0.0,  -1.0),
+    "east":      ( 1.0,   0.0),
+    "west":      (-1.0,   0.0),
     "northeast": ( 0.707, 0.707),
-    "northwest": ( 0.707,-0.707),
-    "southeast": (-0.707, 0.707),
+    "northwest": (-0.707, 0.707),
+    "southeast": ( 0.707,-0.707),
     "southwest": (-0.707,-0.707),
-    "forward":   ( 1.0,   0.0),
-    "backward":  (-1.0,   0.0),
-    "left":      ( 0.0,  -1.0),
-    "right":     ( 0.0,   1.0),
+    "forward":   ( 0.0,   1.0),
+    "backward":  ( 0.0,  -1.0),
+    "left":      (-1.0,   0.0),
+    "right":     ( 1.0,   0.0),
 }
 
 _DEFAULT_TAKEOFF_ALT_M: float = 5.0
