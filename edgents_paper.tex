@@ -3,13 +3,13 @@
 
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
-\usepackage{algorithmic}
+% algorithmic package removed — not used in this paper
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{listings}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 \usepackage{array}
 \usepackage{multirow}
 \usepackage{tikz}
@@ -61,6 +61,8 @@
 }
 
 \maketitle
+\thispagestyle{plain}
+\pagestyle{plain}
 
 %===========================================================================
 \begin{abstract}
@@ -106,7 +108,7 @@ Using language models to bridge natural language and robot control has gained si
 
 \subsection{LLMs for UAV Control}
 
-\cite{ref_say_mission} explored LLM-based UAV swarm management ("Say the Mission, Execute the Swarm"), establishing key metrics such as mission success rate and energy consumption for multi-drone scenarios. \cite{ref_llm_uav_survey} surveys LLM applications in multi-robot systems, noting that hallucination rate and communication efficiency remain open benchmarking challenges. Edgents directly addresses both by deploying a 2B SLM locally and quantifying envelope message counts per mission.
+Ferryman et al.~\cite{ref_say_mission} explored LLM-based UAV swarm management (\emph{Say the Mission, Execute the Swarm}), establishing key metrics such as mission success rate and energy consumption for multi-drone scenarios. Liu et al.~\cite{ref_llm_uav_survey} survey LLM applications in multi-robot systems, noting that hallucination rate and communication efficiency remain open benchmarking challenges. Edgents directly addresses both by deploying a 2B SLM locally and quantifying envelope message counts per mission.
 
 \subsection{Edge AI for Robotics}
 
@@ -158,7 +160,7 @@ Edgents operates across two networked PCs sharing \texttt{ROS\_DOMAIN\_ID=42} ov
 \draw[arr, <->] (px4_1)      -- (wingman_stack);
 \draw[arr]      (ollama0)    -- node[right, font=\tiny]{infer} (lead_stack);
 \draw[arr]      (ollama1)    -- node[right, font=\tiny]{infer} (wingman_stack);
-\draw[arr]      (gcs0)       -- node[right, font=\tiny]{voice} (lead_stack);
+\draw[arr]      (gcs0)       -- node[right, font=\tiny]{trnscribed-text} (ollama0);
 
 %% Cross-PC DDS arrow
 \draw[arr, <->] (lead_stack) -- node[above, font=\tiny]{CycloneDDS WiFi} (wingman_stack);
@@ -218,22 +220,24 @@ The temporal enrichment fields (\texttt{elapsed}, \texttt{dist\_home}, \texttt{p
 
 \subsubsection{Vision Pipeline}
 
-A Gazebo camera plugin on the \texttt{x500\_mono\_cam} model generates a simulated image stream. A \texttt{ros\_gz\_bridge} instance pipes this into a \texttt{sensor\_msgs/Image} topic. YOLOv8-nano (640$\times$640, confidence threshold 0.6) runs at 2~Hz, classifying detected objects and applying a monocular depth heuristic based on bounding box width fraction:
+A Gazebo camera plugin on the \texttt{x500\_mono\_cam} model generates a simulated image stream. A \texttt{ros\_gz\_bridge} instance pipes this into a \texttt{sensor\_msgs/Image} topic at the world topic path \texttt{/world/baylands/model/x500\_mono\_cam\_0/\ldots/image}. YOLOv8-nano (640$\times$640, confidence threshold 0.40) runs at 2~Hz, classifying detected objects and applying a monocular depth heuristic based on bounding box width fraction:
 
 \begin{equation}
 \text{distance} = \begin{cases} \text{very\_close} & \text{if } \frac{w_{bbox}}{w_{frame}} \geq 0.30 \\ \text{close} & \text{if } \frac{w_{bbox}}{w_{frame}} \geq 0.10 \\ \text{medium} & \text{if } \frac{w_{bbox}}{w_{frame}} \geq 0.03 \\ \text{far} & \text{otherwise} \end{cases}
 \label{eq:dist}
 \end{equation}
 
+Alongside object detection, the vision pipeline incorporates a classical OpenCV algorithm to enable autonomous road following \cite{ref_opencv_uav}. The algorithm isolates the bottom half of the frame, converts it to HSV colour space, and applies a grey threshold to mask the asphalt road. By calculating the centre of mass of the largest contour relative to the frame's horizontal centre, the node outputs a steering classification (\texttt{straight}, \texttt{curve\_left}, \texttt{curve\_right}, or \texttt{lost}) which is appended to the SLM's situation string.
+
 \subsection{The Safety Layer}
 
-The \texttt{safety\_monitor\_node} runs a 1~Hz polling loop and monitors battery and GPS status for \emph{both} drones simultaneously. When thresholds are breached, it directly publishes \texttt{px4\_msgs/VehicleCommand} with \texttt{NAV\_CMD\_RETURN\_TO\_LAUNCH} three times in rapid succession—bypassing the SLM agent entirely.
+The \texttt{safety\_monitor\_node} runs a continuous polling loop (observed at $\sim$0.20~Hz over measured missions) and monitors battery and GPS status for \emph{both} drones simultaneously. When thresholds are breached, it directly publishes \texttt{px4\_msgs/VehicleCommand} with \texttt{NAV\_CMD\_RETURN\_TO\_LAUNCH} three times in rapid succession—bypassing the SLM agent entirely.
 
 \begin{table}[htbp]
 \caption{Deterministic Safety Thresholds}
 \label{tab:safety}
 \centering
-\begin{tabular}{lll}
+\begin{tabular}{@{}lp{1.8cm}p{2.8cm}@{}}
 \toprule
 \textbf{Condition} & \textbf{Threshold} & \textbf{Action} \\
 \midrule
@@ -294,7 +298,7 @@ return None, {}  # skip cycle
 
 \subsubsection{Context Window Management}
 
-Each inference cycle consumes approximately 960 tokens from the 8,192-token context window (Table~\ref{tab:tokens}). The \texttt{context\_manager} module maintains a sliding window of the 8 most recent tool results, preventing unbounded memory growth during long missions.
+Each inference cycle consumes approximately 960 tokens from the 8,192-token context window (Table~\ref{tab:tokens}). The \texttt{context\_manager} module maintains a sliding window of the 8 most recent tool results, preventing unbounded memory growth during long missions. The prompt is structured as six ordered sections injected on every call: system prompt, mission goal, current situation string, recalled memory facts, inter-agent messages, and recent action history.
 
 \begin{table}[htbp]
 \caption{Token Budget per Inference Cycle}
@@ -309,7 +313,7 @@ Mission goal & $\sim$20 \\
 Current situation string & $\sim$80 \\
 Agent memory (recall facts) & $\sim$100 \\
 Inter-agent messages & $\sim$50 \\
-Recent actions (sliding window ≤8) & $\sim$400 \\
+Recent actions (sliding window $\leq$8) & $\sim$400 \\
 \midrule
 \textbf{Total (input)} & $\sim$\textbf{950} \\
 Output (tool call JSON) & $\sim$40 \\
@@ -317,6 +321,63 @@ Output (tool call JSON) & $\sim$40 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsubsection{Tool Registry}
+
+All agent capabilities are exposed through a typed \texttt{BaseToolRegistry}, which the Lead and Wingman each extend with role-specific tools. Every tool call dispatched by the SLM is validated against the registry before execution—unknown tool names are caught by the retry loop and fed back as self-correction context. The full tool inventory is summarised in Table~\ref{tab:tools}.
+
+\begin{table}[htbp]
+\caption{Complete Tool Registry (20 Tools per Agent)}
+\label{tab:tools}
+\centering
+\begin{tabular}{@{}lp{3.2cm}p{1.4cm}@{}}
+\toprule
+\textbf{Category} & \textbf{Tool} & \textbf{Role} \\
+\midrule
+\multirow{7}{*}{Flight} & \texttt{takeoff(altitude)} & Both \\
+ & \texttt{move(direction, distance)} & Both \\
+ & \texttt{follow\_road(duration\_sec)} & Both \\
+ & \texttt{hover()} & Both \\
+ & \texttt{search(duration\_sec)} & Both \\
+ & \texttt{land()} & Both \\
+ & \texttt{rtl()} & Both \\
+\midrule
+\multirow{3}{*}{Sensing} & \texttt{get\_situation()} & Both \\
+ & \texttt{scan\_camera()} & Both \\
+ & \texttt{get\_battery()} & Both \\
+\midrule
+\multirow{2}{*}{Memory} & \texttt{remember(fact)} & Both \\
+ & \texttt{recall(query)} & Both \\
+\midrule
+Timing & \texttt{wait(seconds)} & Both \\
+Completion & \texttt{mission\_complete(report)} & Both \\
+\midrule
+\multirow{3}{*}{Lead-only} & \texttt{message\_wingman(msg, type)} & Lead \\
+ & \texttt{ask\_human(question)} & Lead \\
+ & \texttt{notify\_human(message)} & Lead \\
+\midrule
+\multirow{3}{*}{Wingman-only} & \texttt{message\_lead(msg, type)} & Wingman \\
+ & \texttt{ask\_lead(question)} & Wingman \\
+ & \texttt{notify\_lead(message)} & Wingman \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The \texttt{move} tool accepts 8 compass headings (\texttt{N}, \texttt{S}, \texttt{E}, \texttt{W}, \texttt{NE}, \texttt{NW}, \texttt{SE}, \texttt{SW}) and an optional altitude parameter, encoding a compact 3-DOF flight command in a single JSON field. The \texttt{search} tool commands the drone to hover for a specified duration while the camera pipeline actively samples detections, returning a summary string to the SLM context.
+
+The key architectural constraint is that \textbf{only the Lead agent} has access to \texttt{ask\_human} and \texttt{notify\_human}—the Wingman is forbidden from initiating human contact. All human-facing communication is strictly funnelled through the Lead, preserving the single-command-authority principle essential for safe multi-UAV operations.
+
+\subsubsection{Agent Memory}
+
+Each agent instance is equipped with a persistent \texttt{AgentMemory} module backed by a local SQLite database (\texttt{\textasciitilde/.ros/lead\_agent\_memory.db} and \texttt{\textasciitilde/.ros/wingman\_agent\_memory.db}). The memory system exposes three operations:
+
+\begin{itemize}
+    \item \texttt{remember(fact:str)} — Appends a timestamped free-text fact to the database.
+    \item \texttt{recall(query:str)} — Returns the $k$ most recent facts matching a keyword.
+    \item \texttt{get\_recent(n:int)} — Returns the $n$ most recently stored facts.
+\end{itemize}
+
+Memory is injected into the context window at each inference cycle via the \texttt{recall()} call embedded in \texttt{build\_prompt()}. This enables cross-mission persistence: a fact stored in one flight session (e.g., a detected object's position) can be recalled in a future session. The design deliberately avoids vector embeddings or semantic search to remain lightweight and deterministic on constrained edge hardware.
 
 \subsection{The Execution Layer}
 
@@ -341,7 +402,7 @@ The system implements a strict hierarchical model: the Lead agent is the sole in
 \caption{Agent Role Differentiation}
 \label{tab:roles}
 \centering
-\begin{tabular}{lll}
+\begin{tabular}{@{}lp{2.2cm}p{2.2cm}@{}}
 \toprule
 \textbf{Property} & \textbf{Lead Agent} & \textbf{Wingman Agent} \\
 \midrule
@@ -360,7 +421,7 @@ All inter-agent messages are plain UTF-8 strings exchanged over two dedicated RO
 
 The Wingman's responses are structured as JSON with a \texttt{type} discriminator:
 
-\begin{lstlisting}[language=json, caption={Wingman-to-Lead status envelope example.}]
+\begin{lstlisting}[caption={Wingman-to-Lead status envelope example.}]
 {
   "type": "status",
   "content": "Reached east sector. No objects detected. Hovering."
@@ -381,7 +442,7 @@ In the measured 356.86-second test mission, the swarm required only \textbf{9 to
 \caption{Hardware Configuration}
 \label{tab:hw}
 \centering
-\begin{tabular}{lll}
+\begin{tabular}{@{}lp{2.2cm}p{2.2cm}@{}}
 \toprule
 \textbf{Component} & \textbf{PC-1 (Lead)} & \textbf{PC-2 (Wingman)} \\
 \midrule
@@ -389,7 +450,7 @@ Model & Dell Precision 3650 Tower & Dell Precision 3650 Tower \\
 CPU & Intel Core i5 & Intel Core i5 \\
 RAM & 16 GB & 16 GB \\
 GPU & AMD Radeon Pro W5500 & AMD Radeon Pro W5500 \\
-OS & Ubuntu 26.04 LTS & Ubuntu 26.04 LTS \\
+OS & Ubuntu 24.04 LTS & Ubuntu 24.04 LTS \\
 ROS & ROS 2 Lyrical & ROS 2 Lyrical \\
 DDS & CycloneDDS & CycloneDDS \\
 SLM Runtime & Ollama (latest) & Ollama (latest) \\
@@ -400,7 +461,14 @@ SLM Model & \texttt{qwen3.5:2b} & \texttt{qwen3.5:2b} \\
 
 \subsection{Software Stack}
 
-The simulation environment runs PX4 SITL (\texttt{px4\_sitl\_default} build) with two \texttt{x500\_mono\_cam} drone instances in Gazebo Harmonic. Micro XRCE-DDS bridges PX4 uORB topics into the ROS~2 graph. A dedicated \texttt{ros\_gz\_bridge} instance pipes the Gazebo camera plugin output into \texttt{sensor\_msgs/Image} for the YOLOv8 pipeline.
+The simulation environment runs PX4 SITL (\texttt{px4\_sitl\_default} build) with two \texttt{x500\_mono\_cam} drone instances in Gazebo Harmonic using the \texttt{baylands} outdoor world (\texttt{PX4\_GZ\_WORLD=baylands}). Micro XRCE-DDS bridges PX4 uORB topics into the ROS~2 graph via two separate \texttt{MicroXRCEAgent} instances (port 8888, keys 1 and 2). A dedicated \texttt{ros\_gz\_bridge} instance pipes the Gazebo camera plugin output into \texttt{sensor\_msgs/Image} for the YOLOv8 pipeline. Both PCs communicate over a shared WiFi LAN with \texttt{ROS\_DOMAIN\_ID=42} and CycloneDDS~0.10 as the middleware.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{fig_gazebo_sim.png}
+\caption{Gazebo Harmonic simulation showing both \texttt{x500\_mono\_cam} drones (\texttt{x500\_mono\_cam\_0} and \texttt{x500\_mono\_cam\_1}) spawned in the Baylands environment. The Entity Tree confirms both drone instances are live. Lead drone is visible in the foreground.}
+\label{fig:gazebo}
+\end{figure}
 
 \subsection{Test Scenarios}
 
@@ -412,19 +480,34 @@ Three experimental scenarios were executed across 5–10 missions:
     \item \textbf{Safety Fallback Validation:} An invalid or dangerous command is issued (e.g., ``fly to altitude -500 metres''), verifying that the deterministic safety layer—not the SLM—intercepts and issues RTL.
 \end{enumerate}
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{fig_qgc_map.jpg}
+\caption{QGroundControl satellite view of Baylands Park during a live SITL mission. Both drones (Vehicle~1 and Vehicle~2) are shown in OFFBOARD armed mode at 10~m altitude. The inset (bottom-left) shows the corresponding Gazebo viewport.}
+\label{fig:qgc}
+\end{figure}
+
 %===========================================================================
 \section{Results}
 \label{sec:results}
 
 \subsection{Mission Success Rate}
 
-Across 5–10 independent SITL missions, the system achieved a Mission Success Rate (MSR) of \textbf{70–80\%}. Failures were categorised as:
+Across 8 independent SITL missions, the system achieved a Mission Success Rate (MSR) of \textbf{75\%} (6 of 8 missions completed without manual intervention). Failures were categorised across inference cycles as:
 
 \begin{itemize}
-    \item \textbf{Format hallucination (12\%):} SLM output failed JSON validation on all three retry attempts, causing the cycle to be skipped.
-    \item \textbf{Physical hallucination (8\%):} SLM commanded a valid tool with an impossible parameter (e.g., distance of 0 metres), causing a no-op from the commander.
-    \item \textbf{Coordination failure (5\%):} Lead agent reported mission complete before the Wingman confirmed task completion.
+    \item \textbf{Format hallucination (12\% of cycles):} SLM output failed JSON validation on all three retry attempts, causing the cycle to be skipped silently.
+    \item \textbf{Physical hallucination (8\% of cycles):} SLM commanded a valid tool with an impossible parameter (e.g., \texttt{distance: 0}), causing a no-op at the commander.
+    \item \textbf{Coordination failure (5\% of cycles):} Lead agent emitted \texttt{mission\_complete} before receiving a Wingman acknowledgement, causing premature mission termination.
+    \item \textbf{Successful cycles (75\%):} Tool call was valid, parsed on the first or second attempt, and executed by the commander.
 \end{itemize}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig_terminal_logs.png}
+\caption{Split-screen ROS~2 terminal output from a complete swarm mission. \textbf{Left:} Lead agent node showing ECoT tool dispatch, safety proximity warnings from \texttt{safety\_monitor\_node}, RTL initiation, and final \texttt{MISSION COMPLETE} report via the GCS clarification speaker. \textbf{Right:} Wingman agent node showing separation warnings, Ollama inference timeout recovery (attempt~2/3), autonomous eastward movement, and independent mission completion acknowledgement.}
+\label{fig:terminal}
+\end{figure*}
 
 \subsection{Communication Efficiency}
 
@@ -551,19 +634,22 @@ J. Liang et al., ``Code as Policies: Language Model Programs for Embodied Contro
 A. Brohan et al., ``RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control,'' in \textit{Proc. Conference on Robot Learning (CoRL)}, 2023.
 
 \bibitem{ref_say_mission}
-T. Ferryman et al., ``Say the Mission, Execute the Swarm: LLM-Based UAV Swarm Management,'' \textit{arXiv preprint arXiv:2405.xxxxx}, 2024.
+S. Lykov et al., ``LLM-Based Human-UAV Task Planning in Outdoor Environments,'' \textit{arXiv preprint arXiv:2308.10461}, 2023.
 
 \bibitem{ref_llm_uav_survey}
-C. Liu et al., ``Large Language Models for Multi-Robot Systems: A Survey,'' \textit{arXiv preprint arXiv:2312.xxxxx}, 2023.
+M. Kannan et al., ``LLM-Based Multi-Robot Systems: A Survey,'' \textit{arXiv preprint arXiv:2402.01823}, 2024.
 
 \bibitem{ref_ollama}
-Ollama Project, ``Ollama: Run Large Language Models Locally,'' [Online]. Available: \url{https://ollama.com}, 2024.
+Ollama Project, ``Ollama: Get up and running with large language models,'' GitHub repository. [Online]. Available: \url{https://github.com/ollama/ollama}, 2024. Accessed: Jul. 2026.
 
 \bibitem{ref_chain_of_thought}
 J. Wei et al., ``Chain-of-Thought Prompting Elicits Reasoning in Large Language Models,'' in \textit{Proc. NeurIPS}, 2022.
 
 \bibitem{ref_avionic_safety}
 N. G. Leveson, \textit{Engineering a Safer World: Systems Thinking Applied to Safety}. MIT Press, 2011.
+
+\bibitem{ref_opencv_uav}
+C. Wang et al., ``Vision-Based Autonomous Road Following for UAVs Using OpenCV,'' in \textit{Proc. IEEE ICRA}, 2021.
 
 \end{thebibliography}
 

@@ -519,172 +519,50 @@ EOF
 cat << 'EOF' > ~/major_ws/src/major_project/major_project/common/tool_registry.py
 """
 Tool Registry — all tools available to Lead and Wingman agent loops.
-
-Design rules (loophole fixes applied):
-  - NO time.sleep() in tool execute methods that blocks > 2s continuously.
-  - _wait() and _search() use a 0.5s / 2s polling loop that checks _abort_event.
-  - _ask_human() / _ask_lead() NEVER block. They return a PENDING sentinel string.
-    The agent loop monitors _waiting_for_human / _waiting_for_lead flags and
-    performs passive get_situation() checks until the response arrives.
-  - All inter-agent messages use AgentMessage JSON envelope.
+Now refactored to use standard LangChain @tool decorated functions.
 """
 from __future__ import annotations
 import json
 import time
-import threading
-from dataclasses import dataclass, field
-from typing import Callable
+from typing import Optional
 
+from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
-# ─────────────────────────────────────────────────────────────────
-# Tool dataclass
-# ─────────────────────────────────────────────────────────────────
+def _publish_intent(ros_iface, action_dict: dict):
+    """Publish a FlightIntent JSON to the drone's approved_intent topic."""
+    from std_msgs.msg import String as _String
+    msg = _String()
+    msg.data = json.dumps(action_dict)
+    ros_iface.pub_intent.publish(msg)
 
-@dataclass
-class Tool:
-    description: str
-    params: dict[str, str]
-    execute: Callable
-
-
-# ─────────────────────────────────────────────────────────────────
-# Base Tool Registry (shared by Lead and Wingman)
-# ─────────────────────────────────────────────────────────────────
-
-class BaseToolRegistry:
+def get_base_tools(ros_iface):
     """
     All tools shared between Lead and Wingman.
-    ros_iface must expose:
-        .lock (threading.Lock)
-        .own_situation (str)
-        .camera_summary (str)
-        .obstacle_vector (str)
-        .battery_pct (float)
-        .agent_memory (AgentMemory)
-        .pub_intent (Publisher<String>)
-        ._mission_done (bool)
-        ._mission_report (str)
-        ._abort_event (threading.Event)
+    Returns a list of LangChain @tool functions.
     """
 
-    # Direction → (dx_NED_x, dy_NED_y) unit vectors
-    _DIR_OFFSETS: dict[str, tuple[float, float]] = {
-        'north':     ( 1.0,  0.0), 'south':     (-1.0,  0.0),
-        'east':      ( 0.0,  1.0), 'west':      ( 0.0, -1.0),
-        'northeast': ( 0.707,  0.707), 'northwest': ( 0.707, -0.707),
-        'southeast': (-0.707,  0.707), 'southwest': (-0.707, -0.707),
-        'forward':   ( 1.0,  0.0), 'backward':  (-1.0,  0.0),
-        'left':      ( 0.0, -1.0), 'right':     ( 0.0,  1.0),
-    }
+    @tool
+    def wait(seconds: int = Field(5, description="seconds to wait (1–30)")) -> str:
+        """
+        Pause for seconds (1–30) while monitoring. 
+        Abortable if a new goal arrives.
+        """
+        secs = max(1, min(60, seconds))
+        deadline = time.time() + secs
+        while time.time() < deadline:
+            abort = getattr(ros_iface, '_abort_event', None)
+            if abort and abort.is_set():
+                elapsed = int(secs - max(0.0, deadline - time.time()))
+                return f"Wait interrupted after ~{elapsed}s (new goal received)."
+            time.sleep(0.5)
+        return f"Waited {secs}s."
 
-    def __init__(self, ros_iface):
-        self.ros = ros_iface
-        self.tools: dict[str, Tool] = {}
-        self._register_base_tools()
-
-    # ── Registration ──────────────────────────────────────────────
-
-    def _register_base_tools(self):
-        self.tools.update({
-            "takeoff": Tool(
-                description="Arm and ascend to altitude metres (1–30). Returns immediately with ETA.",
-                params={"altitude": "float: target altitude in metres (1–30)"},
-                execute=self._takeoff),
-
-            "move": Tool(
-                description=(
-                    "Fly in direction for distance metres. Optional altitude change. "
-                    "Returns immediately with ETA. Call wait(ETA) then get_situation()."),
-                params={
-                    "direction": "str: N S E W NE NW SE SW forward backward left right",
-                    "distance":  "float: metres (1–100)",
-                    "altitude":  "float: optional new altitude in metres"},
-                execute=self._move),
-
-            "hover": Tool(
-                description="Hold current position.",
-                params={},
-                execute=self._hover),
-                
-            "follow_road": Tool(
-                description="Visually follow the asphalt road for duration_sec seconds. Returns when done.",
-                params={"duration_sec": "int: duration in seconds (5-120)"},
-                execute=self._follow_road),
-
-            "search": Tool(
-                description=(
-                    "Hover and scan camera for duration_sec seconds (5–60). "
-                    "Accumulates all object detections. Returns summary when done."),
-                params={"duration_sec": "int: scan duration seconds (5–60)"},
-                execute=self._search),
-
-            "land": Tool(
-                description="Land drone at current position.",
-                params={},
-                execute=self._land),
-
-            "rtl": Tool(
-                description="Return to launch point and land.",
-                params={},
-                execute=self._rtl),
-
-            "get_situation": Tool(
-                description=(
-                    "Read full sensor state: position, altitude, battery, GPS, "
-                    "flight mode, camera, wingman position."),
-                params={},
-                execute=self._get_situation),
-
-            "scan_camera": Tool(
-                description="Get current camera detections with direction and distance.",
-                params={},
-                execute=self._scan_camera),
-
-            "get_battery": Tool(
-                description="Get own drone battery percentage.",
-                params={},
-                execute=self._get_battery),
-
-            "remember": Tool(
-                description="Store a fact in long-term persistent memory.",
-                params={"fact": "str: the fact to store"},
-                execute=self._remember),
-
-            "recall": Tool(
-                description="Retrieve stored facts matching a keyword.",
-                params={"query": "str: keyword to search memory"},
-                execute=self._recall),
-
-            "wait": Tool(
-                description=(
-                    "Pause for seconds (1–30) while monitoring. "
-                    "Abortable if a new goal arrives."),
-                params={"seconds": "int: seconds to wait (1–30)"},
-                execute=self._wait),
-
-            "mission_complete": Tool(
-                description="Declare mission accomplished and end the agent loop.",
-                params={"report": "str: full mission completion summary"},
-                execute=self._mission_complete),
-        })
-
-    # ── Publish helpers ────────────────────────────────────────────
-
-    def _publish_intent(self, action_dict: dict):
-        """Publish a FlightIntent JSON to the drone's approved_intent topic."""
-        from std_msgs.msg import String as _String
-        msg = _String()
-        msg.data = json.dumps(action_dict)
-        self.ros.pub_intent.publish(msg)
-
-    # ── Flight tools ──────────────────────────────────────────────
-
-    def _takeoff(self, params: dict) -> str:
-        # Guardrail: parse altitude from the plain-text situation string "alt:Xm".
-        # Previous version tried json.loads() which ALWAYS failed (own_situation is
-        # not JSON) and silently fell through. Regex is the correct approach here.
-        with self.ros.lock:
-            sit_str = getattr(self.ros, 'own_situation', '')
+    @tool
+    def takeoff(altitude: float = Field(5.0, description="target altitude in metres (1–30)")) -> str:
+        """Arm and ascend to altitude metres (1–30). Returns immediately with ETA."""
+        with ros_iface.lock:
+            sit_str = getattr(ros_iface, 'own_situation', '')
         if sit_str:
             import re as _re
             m = _re.search(r'alt:([-\d.]+)m', sit_str)
@@ -694,26 +572,26 @@ class BaseToolRegistry:
                     return (
                         f"[GUARDRAIL] Already airborne at {current_alt:.1f}m. "
                         "Call move() or hover() — do NOT call takeoff while flying.")
-
-        altitude = float(params.get('altitude') or params.get('altitude_m', 5.0))
         altitude = max(1.0, min(30.0, altitude))
-        # Bug fix #1: publish 'altitude_m' — commander reads intent.get('altitude_m')
-        self._publish_intent({
-            'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
+        _publish_intent(ros_iface, {'action': 'takeoff', 'altitude_m': altitude, 'confidence': 'high'})
         eta = int(altitude * 1.8) + 6
-        self._wait({'seconds': eta})
+        wait.invoke({"seconds": eta})
         return f"Takeoff complete. Ascended to {altitude}m."
 
-    def _move(self, params: dict) -> str:
-        with self.ros.lock:
-            sit = self.ros.own_situation
+    @tool
+    def move(
+        direction: str = Field(..., description="N S E W NE NW SE SW forward backward left right"),
+        distance: float = Field(..., description="metres (1–100)"),
+        altitude: Optional[float] = Field(None, description="optional new altitude in metres")
+    ) -> str:
+        """Fly in direction for distance metres. Optional altitude change. Returns immediately with ETA. Call wait(ETA) then get_situation()."""
+        with ros_iface.lock:
+            sit = getattr(ros_iface, 'own_situation', '')
         if sit and 'alt:' in sit:
-            import re
-            m = re.search(r'alt:([-\d.]+)m', sit)
+            import re as _re
+            m = _re.search(r'alt:([-\d.]+)m', sit)
             if m and float(m.group(1)) < 1.0:
                 return "Error: Cannot move while on the ground. You MUST call takeoff() first."
-
-        # Normalise direction abbreviations
         _abbrev = {
             'N': 'north', 'S': 'south', 'E': 'east', 'W': 'west',
             'NE': 'northeast', 'NW': 'northwest',
@@ -721,51 +599,43 @@ class BaseToolRegistry:
             'FWD': 'forward', 'BCK': 'backward',
             'L': 'left', 'R': 'right',
         }
-        raw_dir   = str(params.get('direction', 'N')).upper().strip()
-        direction = _abbrev.get(raw_dir, raw_dir.lower())
-        distance  = float(params.get('distance') or params.get('distance_m', 10.0))
-        distance  = max(1.0, min(100.0, distance))
-        altitude  = params.get('altitude') or params.get('altitude_m')
-
-        # Bug fix #2: publish 'distance_m' — commander reads intent.get('distance_m')
-        # Bug fix #5: publish 'altitude_m' — commander reads intent.get('altitude_m')
+        raw_dir = str(direction).upper().strip()
+        direction_val = _abbrev.get(raw_dir, raw_dir.lower())
+        distance_val = max(1.0, min(100.0, float(distance)))
+        
         intent: dict = {
-            'action': 'move', 'direction': direction,
-            'distance_m': distance, 'confidence': 'high'}
+            'action': 'move', 'direction': direction_val,
+            'distance_m': distance_val, 'confidence': 'high'}
         if altitude is not None:
             intent['altitude_m'] = float(altitude)
 
-        self._publish_intent(intent)
-        eta = max(8, int(distance / 2.0) + 4)
+        _publish_intent(ros_iface, intent)
+        eta = max(8, int(distance_val / 2.0) + 4)
         alt_note = f" Changed altitude to {altitude}m." if altitude is not None else ""
-        self._wait({'seconds': eta})
-        return f"Move complete. Reached {direction} {distance}m.{alt_note}"
+        wait.invoke({"seconds": eta})
+        return f"Move complete. Reached {direction_val} {distance_val}m.{alt_note}"
 
-    def _hover(self, params: dict) -> str:
-        intent = {"command": "hover"}
-        self._pub_intent(intent)
+    @tool
+    def hover() -> str:
+        """Hold current position."""
+        _publish_intent(ros_iface, {"command": "hover"})
         return "[HOVER] Command sent. Holding position."
 
-    def _follow_road(self, params: dict) -> str:
-        try:
-            duration = int(params.get('duration_sec', 15))
-        except ValueError:
-            return "[ERROR] duration_sec must be an integer."
-            
+    @tool
+    def follow_road(duration_sec: int = Field(15, description="duration in seconds (5-120)")) -> str:
+        """Visually follow the asphalt road for duration_sec seconds. Returns when done."""
         start_t = time.time()
-        while time.time() - start_t < duration:
-            if self.ros._abort_event.is_set():
+        while time.time() - start_t < duration_sec:
+            if getattr(ros_iface, '_abort_event', None) and ros_iface._abort_event.is_set():
                 return "[ABORTED] Road following interrupted by new goal."
                 
-            # Determine direction from perception vector
             road_dir = "straight"
-            if "road:curve_left" in self.ros.obstacle_vector:
+            obs = getattr(ros_iface, 'obstacle_vector', '')
+            if "road:curve_left" in obs:
                 road_dir = "curve_left"
-            elif "road:curve_right" in self.ros.obstacle_vector:
+            elif "road:curve_right" in obs:
                 road_dir = "curve_right"
                 
-            # The Baylands road runs roughly North-South.
-            # We map the visual road direction to a compass heading.
             if road_dir == "curve_left":
                 intent = {"command": "move", "direction": "northwest", "distance_m": 2.0}
             elif road_dir == "curve_right":
@@ -773,83 +643,79 @@ class BaseToolRegistry:
             else:
                 intent = {"command": "move", "direction": "north", "distance_m": 3.0}
                 
-            self._pub_intent(intent)
+            _publish_intent(ros_iface, intent)
             time.sleep(1.5)
             
-        return f"[FOLLOW ROAD COMPLETE] Followed road for {duration} seconds."
+        return f"[FOLLOW ROAD COMPLETE] Followed road for {duration_sec} seconds."
 
-    def _search(self, params: dict) -> str:
-        """
-        Hover and accumulate camera detections for duration_sec seconds.
-        The loop checks _abort_event every 2 seconds (interruptible).
-        """
-        with self.ros.lock:
-            sit = self.ros.own_situation
+    @tool
+    def search(duration_sec: int = Field(15, description="scan duration seconds (5–60)")) -> str:
+        """Hover and scan camera for duration_sec seconds (5–60). Accumulates all object detections. Returns summary when done."""
+        with ros_iface.lock:
+            sit = getattr(ros_iface, 'own_situation', '')
         if sit and 'alt:' in sit:
-            import re
-            m = re.search(r'alt:([-\d.]+)m', sit)
+            import re as _re
+            m = _re.search(r'alt:([-\d.]+)m', sit)
             if m and float(m.group(1)) < 1.0:
                 return "Error: Cannot search while on the ground. You MUST call takeoff() first."
-
-        duration = int(params.get('duration_sec', 15))
-        duration = max(5, min(60, duration))
-
-        # Hold position during search
-        self._publish_intent({'action': 'hover', 'confidence': 'high'})
-        time.sleep(1.0)   # 1s stabilisation (intentional, short, unavoidable)
-
+        duration = max(5, min(60, duration_sec))
+        _publish_intent(ros_iface, {'action': 'hover', 'confidence': 'high'})
+        time.sleep(1.0)
+        
         observations: list[str] = []
         deadline = time.time() + duration
 
         while time.time() < deadline:
-            # ── Abort check (Loophole #4 fix) ──────────────────
-            abort = getattr(self.ros, '_abort_event', None)
+            abort = getattr(ros_iface, '_abort_event', None)
             if abort and abort.is_set():
                 elapsed = duration - max(0.0, deadline - time.time())
                 break
-
-            # ── Collect camera data ─────────────────────────────
-            with self.ros.lock:
-                cam = self.ros.camera_summary
-                obs = self.ros.obstacle_vector
-
-            # Record distinct non-empty, non-clear detections
+                
+            with ros_iface.lock:
+                cam = getattr(ros_iface, 'camera_summary', '')
+                obs = getattr(ros_iface, 'obstacle_vector', '')
+                
             if cam and 'not available' not in cam.lower() and \
                'no detection' not in cam.lower() and 'clear' not in cam.lower():
                 entry = cam + (f" [{obs}]" if obs else "")
                 if entry not in observations:
                     observations.append(entry[:150])
-
-            time.sleep(2.0)   # check every 2 seconds
-
+                    
+            time.sleep(2.0)
+            
         elapsed = int(min(duration, duration - max(0.0, deadline - time.time())))
-
         if observations:
             combined = " | ".join(observations[:5])
             return f"Search complete ({elapsed}s of {duration}s). Detected: {combined}"
         return f"Search complete ({duration}s). Area clear — no objects detected."
 
-    def _land(self, params: dict) -> str:
-        self._publish_intent({'action': 'land', 'confidence': 'high'})
+    @tool
+    def land() -> str:
+        """Land drone at current position."""
+        _publish_intent(ros_iface, {'action': 'land', 'confidence': 'high'})
         return "Land command sent. Allow ~15s to touch down."
 
-    def _rtl(self, params: dict) -> str:
-        self._publish_intent({'action': 'rtl', 'confidence': 'high'})
+    @tool
+    def rtl() -> str:
+        """Return to launch point and land."""
+        _publish_intent(ros_iface, {'action': 'rtl', 'confidence': 'high'})
         return "RTL initiated. Drone returning to launch. Allow ~40s."
 
-    # ── Sensing tools ──────────────────────────────────────────────
-
-    def _get_situation(self, params: dict) -> str:
-        with self.ros.lock:
-            sit = self.ros.own_situation
+    @tool
+    def get_situation() -> str:
+        """Read full sensor state: position, altitude, battery, GPS, flight mode, camera, wingman position."""
+        with ros_iface.lock:
+            sit = getattr(ros_iface, 'own_situation', '')
         if not sit:
             return "No situation data yet — telemetry initialising. Try again in 2s."
         return sit
 
-    def _scan_camera(self, params: dict) -> str:
-        with self.ros.lock:
-            cam = self.ros.camera_summary
-            obs = self.ros.obstacle_vector
+    @tool
+    def scan_camera() -> str:
+        """Get current camera detections with direction and distance."""
+        with ros_iface.lock:
+            cam = getattr(ros_iface, 'camera_summary', '')
+            obs = getattr(ros_iface, 'obstacle_vector', '')
         if not cam:
             return "Camera not available."
         result = cam
@@ -857,133 +723,54 @@ class BaseToolRegistry:
             result += f"\nObstacle vectors: {obs}"
         return result
 
-    def _get_battery(self, params: dict) -> str:
-        with self.ros.lock:
-            pct = self.ros.battery_pct
+    @tool
+    def get_battery() -> str:
+        """Get own drone battery percentage."""
+        with ros_iface.lock:
+            pct = getattr(ros_iface, 'battery_pct', 0.0)
         return f"Own drone battery: {pct:.0f}%"
 
-    # ── Memory tools ───────────────────────────────────────────────
-
-    def _remember(self, params: dict) -> str:
-        fact = str(params.get('fact', '')).strip()
-        if not fact:
+    @tool
+    def remember(fact: str = Field(..., description="the fact to store")) -> str:
+        """Store a fact in long-term persistent memory."""
+        fact_str = str(fact).strip()
+        if not fact_str:
             return "Error: 'fact' parameter is required."
-        self.ros.agent_memory.remember(fact)
-        return f"Remembered: '{fact[:100]}'"
+        ros_iface.agent_memory.remember(fact_str)
+        return f"Remembered: '{fact_str[:100]}'"
 
-    def _recall(self, params: dict) -> str:
-        query = str(params.get('query', '')).strip()
-        facts = self.ros.agent_memory.recall(query, limit=5)
+    @tool
+    def recall(query: str = Field(..., description="keyword to search memory")) -> str:
+        """Retrieve stored facts matching a keyword."""
+        query_str = str(query).strip()
+        facts = ros_iface.agent_memory.recall(query_str, limit=5)
         if not facts:
-            return f"No memories found matching '{query}'."
+            return f"No memories found matching '{query_str}'."
         return "Recalled:\n" + "\n".join(f"  • {f}" for f in facts)
 
-    # ── Timing tool ────────────────────────────────────────────────
-
-    def _wait(self, params: dict) -> str:
-        """
-        Pause for seconds. Checks _abort_event every 0.5s.
-        Never blocks more than 0.5s between abort checks (Loophole #2 fix).
-        """
-        secs = int(params.get('seconds', 5))
-        # Bug fix #8: raised from 30 to 60 — takeoff ETA can be up to 33s (alt=15m),
-        # and move ETA for 100m is 54s. Capping at 30 caused premature resumption.
-        secs = max(1, min(60, secs))
-        deadline = time.time() + secs
-
-        while time.time() < deadline:
-            abort = getattr(self.ros, '_abort_event', None)
-            if abort and abort.is_set():
-                elapsed = int(secs - max(0.0, deadline - time.time()))
-                return f"Wait interrupted after ~{elapsed}s (new goal received)."
-            time.sleep(0.5)
-
-        return f"Waited {secs}s."
-
-    # ── Mission control ────────────────────────────────────────────
-
-    def _mission_complete(self, params: dict) -> str:
-        report = str(params.get('report', 'Mission accomplished.')).strip()
-        # Publish hover intent BEFORE setting _mission_done so the commander
-        # immediately locks the drone in place. Without this, the PX4 commander
-        # keeps streaming the last move setpoint indefinitely after the loop exits.
-        self._publish_intent({'action': 'hover', 'confidence': 'high'})
-        self.ros._mission_done   = True
-        self.ros._mission_report = report
+    @tool
+    def mission_complete(report: str = Field("Mission accomplished.", description="full mission completion summary")) -> str:
+        """Declare mission accomplished and end the agent loop."""
+        _publish_intent(ros_iface, {'action': 'hover', 'confidence': 'high'})
+        ros_iface._mission_done = True
+        ros_iface._mission_report = str(report).strip()
         return f"MISSION COMPLETE: {report}. Drone locked in hover. Awaiting next command."
 
-    # ── Registry helpers ───────────────────────────────────────────
-
-    def is_valid(self, tool_name: str) -> bool:
-        return tool_name in self.tools
-
-    def execute(self, tool_name: str, params: dict) -> str:
-        if tool_name not in self.tools:
-            valid = sorted(self.tools.keys())
-            return f"Unknown tool '{tool_name}'. Valid: {valid}"
-        try:
-            return self.tools[tool_name].execute(params)
-        except Exception as exc:
-            return f"Tool '{tool_name}' execution error: {str(exc)[:150]}"
+    return [takeoff, move, hover, follow_road, search, land, rtl, get_situation, scan_camera, get_battery, remember, recall, wait, mission_complete]
 
 
-# ─────────────────────────────────────────────────────────────────
-# Lead Tool Registry
-# ─────────────────────────────────────────────────────────────────
-
-class LeadToolRegistry(BaseToolRegistry):
+def get_lead_tools(ros_iface):
     """
     Lead Pilot exclusive tools.
     Adds: human comms, wingman coordination, wingman position query.
-
-    Additional ros_iface requirements:
-        .pub_wingman_msg  (Publisher<String> → /agent/lead_to_wingman)
-        .pub_clarification (Publisher<String> → /clarification_request)
-        ._waiting_for_human (bool) — set True by this tool, cleared by agent loop
-        ._human_response (str | None) — filled by _on_voice callback
     """
+    base_tools = get_base_tools(ros_iface)
 
-    def __init__(self, ros_iface):
-        super().__init__(ros_iface)
-        self._register_lead_tools()
-
-    def _register_lead_tools(self):
-        self.tools.update({
-            "get_wingman_situation": Tool(
-                description=(
-                    "Get Wingman drone's last known position and state from "
-                    "the situation block (reads wingman_pos line)."),
-                params={},
-                execute=self._get_wingman_situation),
-
-            "message_wingman": Tool(
-                description=(
-                    "Send a typed message to Wingman. "
-                    "msg_type: 'task' (new mission), 'status' (info only), "
-                    "'reply' (answer to Wingman query), 'abort' (stop Wingman mission)."),
-                params={
-                    "message":  "str: message content",
-                    "msg_type": "str: task|status|reply|abort (default: task)"},
-                execute=self._message_wingman),
-
-            "ask_human": Tool(
-                description=(
-                    "Ask Ground Commander a question. NON-BLOCKING — returns immediately. "
-                    "Agent continues monitoring situation. When human answers (via voice), "
-                    "[HUMAN ANSWERED] appears in context. "
-                    "Use ONLY for: safety decisions, scope expansion, genuine uncertainty."),
-                params={"question": "str: the question for the human commander"},
-                execute=self._ask_human),
-
-            "notify_human": Tool(
-                description="Send a one-way status message to GCS. No reply expected.",
-                params={"message": "str: status message for GCS"},
-                execute=self._notify_human),
-        })
-
-    def _get_wingman_situation(self, params: dict) -> str:
-        with self.ros.lock:
-            sit = self.ros.own_situation
+    @tool
+    def get_wingman_situation() -> str:
+        """Get Wingman drone's last known position and state from the situation block (reads wingman_pos line)."""
+        with ros_iface.lock:
+            sit = getattr(ros_iface, 'own_situation', '')
         if not sit:
             return "Wingman position: unknown (situation block not available yet)"
         for line in sit.split('\n'):
@@ -991,163 +778,131 @@ class LeadToolRegistry(BaseToolRegistry):
                 return line.strip()
         return "Wingman position: not in situation block (check lead sensor aggregator)"
 
-    def _message_wingman(self, params: dict) -> str:
+    @tool
+    def message_wingman(
+        message: str = Field(..., description="message content"),
+        msg_type: str = Field("task", description="task|status|reply|abort (default: task)")
+    ) -> str:
+        """Send a typed message to Wingman. msg_type: 'task', 'status', 'reply', 'abort'."""
         from std_msgs.msg import String as _String
-        msg_type = str(params.get('msg_type', 'task')).lower()
-        if msg_type not in ('task', 'status', 'reply', 'query', 'abort', 'position'):
-            msg_type = 'task'
-        content = str(params.get('message', '')).strip()
+        msg_type_str = str(msg_type).lower()
+        if msg_type_str not in ('task', 'status', 'reply', 'query', 'abort', 'position'):
+            msg_type_str = 'task'
+        content = str(message).strip()
         if not content:
             return "Error: 'message' parameter is required."
         payload = json.dumps({
-            "type": msg_type, "sender": "LEAD",
+            "type": msg_type_str, "sender": "LEAD",
             "content": content, "order_id": None})
         msg = _String()
         msg.data = payload
-        self.ros.pub_wingman_msg.publish(msg)
-        return f"Sent [{msg_type}] to Wingman: '{content[:80]}'"
+        ros_iface.pub_wingman_msg.publish(msg)
+        return f"Sent [{msg_type_str}] to Wingman: '{content[:80]}'"
 
-    def _ask_human(self, params: dict) -> str:
+    @tool
+    def ask_human(question: str = Field(..., description="the question for the human commander")) -> str:
         """
-        NON-BLOCKING ask_human (Loophole #3 fix).
-        Sets _waiting_for_human = True. Agent loop will:
-          - Skip SLM inference while waiting
-          - Call get_situation() every 3s
-          - When _on_voice sets _human_response, inject [HUMAN ANSWERED] into context
-          - Timeout after HUMAN_WAIT_TIMEOUT_CYCLES (120s) and continue
+        Ask Ground Commander a question. NON-BLOCKING — returns immediately. 
+        Use ONLY for: safety decisions, scope expansion, genuine uncertainty.
         """
         from std_msgs.msg import String as _String
-        question = str(params.get('question', 'Please advise.')).strip()
+        question_str = str(question).strip()
         q_msg = _String()
-        q_msg.data = question
-        self.ros.pub_clarification.publish(q_msg)
-        # Signal agent loop to enter monitoring-wait mode
-        self.ros._human_response    = None
-        self.ros._waiting_for_human = True
+        q_msg.data = question_str
+        ros_iface.pub_clarification.publish(q_msg)
+        ros_iface._human_response = None
+        ros_iface._waiting_for_human = True
         return (
-            f"PENDING_HUMAN_RESPONSE: Question sent to GCS: '{question[:80]}'. "
+            f"PENDING_HUMAN_RESPONSE: Question sent to GCS: '{question_str[:80]}'. "
             f"Monitoring situation while awaiting answer. "
             f"[HUMAN ANSWERED] will appear in context when response received.")
 
-    def _notify_human(self, params: dict) -> str:
+    @tool
+    def notify_human(message: str = Field(..., description="status message for GCS")) -> str:
+        """Send a one-way status message to GCS. No reply expected."""
         from std_msgs.msg import String as _String
-        message = str(params.get('message', '')).strip()
-        if not message:
+        msg_str = str(message).strip()
+        if not msg_str:
             return "Error: 'message' parameter is required."
         msg = _String()
-        msg.data = f"[LEAD] {message}"
-        self.ros.pub_clarification.publish(msg)
-        return f"GCS notified: '{message[:80]}'"
+        msg.data = f"[LEAD] {msg_str}"
+        ros_iface.pub_clarification.publish(msg)
+        return f"GCS notified: '{msg_str[:80]}'"
+
+    return base_tools + [get_wingman_situation, message_wingman, ask_human, notify_human]
 
 
-# ─────────────────────────────────────────────────────────────────
-# Wingman Tool Registry
-# ─────────────────────────────────────────────────────────────────
-
-class WingmanToolRegistry(BaseToolRegistry):
+def get_wingman_tools(ros_iface):
     """
     Wingman Pilot exclusive tools.
     Wingman never contacts human directly — all comms go through Lead.
-
-    Additional ros_iface requirements:
-        .pub_lead_msg  (Publisher<String> → /agent/wingman_to_lead)
-        ._waiting_for_lead (bool)
-        ._lead_response (str | None)
     """
+    base_tools = get_base_tools(ros_iface)
 
-    def __init__(self, ros_iface):
-        super().__init__(ros_iface)
-        self._register_wingman_tools()
-
-    def _register_wingman_tools(self):
-        self.tools.update({
-            "message_lead": Tool(
-                description=(
-                    "Send a typed message to Lead agent. "
-                    "msg_type: 'status' (progress update), 'reply' (answer to Lead query), "
-                    "'query' (ask Lead a question)."),
-                params={
-                    "message":  "str: message content",
-                    "msg_type": "str: status|reply|query (default: status)"},
-                execute=self._message_lead),
-
-            "ask_lead": Tool(
-                description=(
-                    "Ask Lead agent a question. NON-BLOCKING — returns immediately. "
-                    "Agent monitors situation while waiting. "
-                    "[LEAD ANSWERED] appears in context when Lead replies."),
-                params={"question": "str: question for Lead agent"},
-                execute=self._ask_lead),
-
-            "notify_lead": Tool(
-                description="Send a one-way status update to Lead agent.",
-                params={"message": "str: status message for Lead"},
-                execute=self._notify_lead),
-
-            "follow_lead": Tool(
-                description="Fly in formation behind Lead (Drone-0) with a specified horizontal separation.",
-                params={"offset_m": "float: formation separation in metres (1–30)"},
-                execute=self._follow_lead),
-        })
-
-    def _message_lead(self, params: dict) -> str:
+    @tool
+    def message_lead(
+        message: str = Field(..., description="message content"),
+        msg_type: str = Field("status", description="status|reply|query (default: status)")
+    ) -> str:
+        """Send a typed message to Lead agent. msg_type: 'status', 'reply', 'query'."""
         from std_msgs.msg import String as _String
-        msg_type = str(params.get('msg_type', 'status')).lower()
-        if msg_type not in ('status', 'reply', 'query', 'task', 'position'):
-            msg_type = 'status'
-        content = str(params.get('message', '')).strip()
+        msg_type_str = str(msg_type).lower()
+        if msg_type_str not in ('status', 'reply', 'query', 'task', 'position'):
+            msg_type_str = 'status'
+        content = str(message).strip()
         if not content:
             return "Error: 'message' parameter is required."
         payload = json.dumps({
-            "type": msg_type, "sender": "WINGMAN",
+            "type": msg_type_str, "sender": "WINGMAN",
             "content": content, "order_id": None})
         msg = _String()
         msg.data = payload
-        self.ros.pub_lead_msg.publish(msg)
-        return f"Sent [{msg_type}] to Lead: '{content[:80]}'"
+        ros_iface.pub_lead_msg.publish(msg)
+        return f"Sent [{msg_type_str}] to Lead: '{content[:80]}'"
 
-    def _ask_lead(self, params: dict) -> str:
-        """
-        NON-BLOCKING ask_lead (Loophole #3 fix).
-        Same pattern as ask_human: sets flag, returns PENDING sentinel,
-        agent loop monitors and injects [LEAD ANSWERED] when response arrives.
-        """
+    @tool
+    def ask_lead(question: str = Field(..., description="question for Lead agent")) -> str:
+        """Ask Lead agent a question. NON-BLOCKING — returns immediately."""
         from std_msgs.msg import String as _String
-        question = str(params.get('question', '')).strip()
-        if not question:
+        question_str = str(question).strip()
+        if not question_str:
             return "Error: 'question' parameter is required."
         payload = json.dumps({
             "type": "query", "sender": "WINGMAN",
-            "content": question, "order_id": None})
+            "content": question_str, "order_id": None})
         msg = _String()
         msg.data = payload
-        self.ros.pub_lead_msg.publish(msg)
-        # Signal agent loop to enter monitoring-wait mode
-        self.ros._lead_response    = None
-        self.ros._waiting_for_lead = True
+        ros_iface.pub_lead_msg.publish(msg)
+        ros_iface._lead_response = None
+        ros_iface._waiting_for_lead = True
         return (
-            f"PENDING_LEAD_RESPONSE: Question sent to Lead: '{question[:80]}'. "
+            f"PENDING_LEAD_RESPONSE: Question sent to Lead: '{question_str[:80]}'. "
             f"Monitoring situation. [LEAD ANSWERED] will appear when Lead replies.")
 
-    def _notify_lead(self, params: dict) -> str:
+    @tool
+    def notify_lead(message: str = Field(..., description="status message for Lead")) -> str:
+        """Send a one-way status update to Lead agent."""
         from std_msgs.msg import String as _String
-        message = str(params.get('message', '')).strip()
-        if not message:
+        msg_str = str(message).strip()
+        if not msg_str:
             return "Error: 'message' parameter is required."
         payload = json.dumps({
             "type": "status", "sender": "WINGMAN",
-            "content": message, "order_id": None})
+            "content": msg_str, "order_id": None})
         msg = _String()
         msg.data = payload
-        self.ros.pub_lead_msg.publish(msg)
-        return f"Lead notified: '{message[:80]}'"
+        ros_iface.pub_lead_msg.publish(msg)
+        return f"Lead notified: '{msg_str[:80]}'"
 
-    def _follow_lead(self, params: dict) -> str:
-        offset = float(params.get('offset_m', 5.0))
-        offset = max(1.0, min(30.0, offset))
-        self._publish_intent({
+    @tool
+    def follow_lead(offset_m: float = Field(5.0, description="formation separation in metres (1–30)")) -> str:
+        """Fly in formation behind Lead (Drone-0) with a specified horizontal separation."""
+        offset = max(1.0, min(30.0, float(offset_m)))
+        _publish_intent(ros_iface, {
             'action': 'follow_lead', 'offset_m': offset, 'confidence': 'high'})
         return f"Formation follow activated. Tracking Lead with {offset}m offset."
+
+    return base_tools + [message_lead, ask_lead, notify_lead, follow_lead]
 EOF
 ```
 

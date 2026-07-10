@@ -125,32 +125,7 @@ PROMPT_EOF
 ```bash
 cat << 'EOF' > ~/major_ws/src/major_project/major_project/lead_pilot/lead_agent_node.py
 """
-Lead Agent Node — the always-active autonomous brain for Drone-0.
-
-All 5 critical loophole fixes from architectural audit:
-
-Fix #1 — Self-Start (Loophole #1):
-  Agent starts with STANDBY goal on node boot. No voice command needed.
-
-Fix #2 — Non-Blocking Tools (Loophole #2):
-  _wait() and _search() check _abort_event every 0.5s/2s.
-  Only 200ms pause for instantaneous tools (not after every tool).
-
-Fix #3 — Non-Blocking ask_human (Loophole #3):
-  ask_human() returns PENDING sentinel immediately.
-  Agent loop does passive get_situation() monitoring every 3s while waiting.
-  Answer injected as [HUMAN ANSWERED] memory note when voice arrives.
-  Timeout after 120s if no response.
-
-Fix #4 — Safe Goal Replacement (Loophole #4):
-  _abort_event is set before clearing context. Old loop detects abort
-  at top of each iteration and exits cleanly. New loop starts after brief wait.
-
-Fix #5 — SLM Health Monitor (Loophole #5):
-  consecutive_failures tracked. After MAX_CONSECUTIVE_FAILURES:
-    - RTL intent published directly
-    - Human notified via /clarification_request
-    - /agent/health reflects failure state
+Lead Agent Node — the always-active autonomous brain for Drone-0 (V2 with LangGraph).
 """
 import rclpy
 from rclpy.node import Node
@@ -161,6 +136,13 @@ import os
 import re
 import threading
 import time
+from typing import TypedDict, Annotated, Sequence
+import operator
+
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
+from langgraph.graph import StateGraph, END
+from langchain_community.chat_models import ChatOllama
+from langchain_core.tools import StructuredTool
 
 # QoS matching the LeadIntentBridgeNode and GCS nodes
 RELIABLE_QOS = QoSProfile(
@@ -173,137 +155,188 @@ RELIABLE_QOS = QoSProfile(
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from major_project.common.ollama_client import OllamaClient
-from major_project.common.tool_registry import LeadToolRegistry
+from major_project.common.tool_registry import get_lead_tools
 from major_project.common.context_manager import ContextManager
 from major_project.common.agent_memory import AgentMemory
 
 
 def _load_prompt(filename: str) -> str:
-    """Load a system prompt from the prompts/ subdirectory."""
     path = os.path.join(os.path.dirname(__file__), 'prompts', filename)
     with open(path) as f:
         return f.read()
 
 
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    goal: str
+    latest_situation: str
+    mission_done: bool
+    abort_flag: bool
+
+
 class LeadAgentNode(Node):
 
-    # Tools that return in <50ms — apply brief pause to avoid SLM hammering
     FAST_TOOLS = frozenset({
         'notify_human', 'message_wingman', 'hover',
         'remember', 'get_battery',
     })
 
-    # After this many consecutive SLM failures → trigger RTL fallback
     MAX_CONSECUTIVE_FAILURES = 5
-
-    # After this many 3s monitoring cycles without human response → timeout
-    HUMAN_WAIT_TIMEOUT_CYCLES = 40   # 40 × 3s = 120s
+    HUMAN_WAIT_TIMEOUT_CYCLES = 40
 
     def __init__(self):
         super().__init__('lead_agent_node')
 
-        # ── Parameters ────────────────────────────────────────────
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen3.5:2b')
-        self.declare_parameter('num_ctx', 8192)  # raised: 2048 too small for STANDBY loop
+        self.declare_parameter('num_ctx', 8192)
 
         host    = self.get_parameter('ollama_host').value
         port    = self.get_parameter('ollama_port').value
         model   = self.get_parameter('model').value
         self._num_ctx = self.get_parameter('num_ctx').value
 
-        # ── SLM client + system prompt ─────────────────────────────
-        self.ollama = OllamaClient(
-            host=host, port=port, model=model, num_ctx=self._num_ctx)
+        self.llm = ChatOllama(
+            base_url=f"http://{host}:{port}",
+            model=model,
+            num_ctx=self._num_ctx,
+            temperature=0
+        )
         self.system_prompt = _load_prompt('lead_agent_system.txt')
 
-        # ── Shared sensor state (protected by self.lock) ──────────
         self.lock            = threading.Lock()
         self.own_situation   = ""
         self.camera_summary  = ""
         self.obstacle_vector = ""
         self.battery_pct     = 100.0
 
-        # ── Human interaction state (non-blocking) ────────────────
         self._waiting_for_human  = False
-        self._human_response: str | None = None
+        self._human_response = None
         self._human_wait_cycles  = 0
-
-        # ── Wingman query tracking ────────────────────────────────
         self._wingman_query_pending = False
 
-        # ── Agent loop state ──────────────────────────────────────
         self._agent_running  = False
         self._mission_done   = False
         self._mission_report = ""
         self._abort_event    = threading.Event()
 
-        # ── SLM health tracking ───────────────────────────────────
         self._consecutive_failures = 0
         self._slm_healthy          = True
 
-        # ── Core components ───────────────────────────────────────
         self.ctx          = ContextManager()
         self.agent_memory = AgentMemory(db_name="lead_agent_memory.db")
-        self.tools        = LeadToolRegistry(self)
+        self.tools        = get_lead_tools(self)
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
-        # ── Publishers ────────────────────────────────────────────
-        # RELIABLE_QOS (TRANSIENT_LOCAL) must match intent bridge + GCS subscribers
-        self.pub_intent         = self.create_publisher(
-            String, '/lead/approved_intent', RELIABLE_QOS)
-        self.pub_clarification  = self.create_publisher(
-            String, '/clarification_request', RELIABLE_QOS)
-        self.pub_mission_status = self.create_publisher(
-            String, '/mission_status', RELIABLE_QOS)
-        # Volatile OK — agent/health and wingman comms use depth=10 on both sides
-        self.pub_wingman_msg    = self.create_publisher(
-            String, '/agent/lead_to_wingman', 10)
-        self.pub_health         = self.create_publisher(
-            String, '/agent/health', RELIABLE_QOS)
+        self.pub_intent         = self.create_publisher(String, '/lead/approved_intent', RELIABLE_QOS)
+        self.pub_clarification  = self.create_publisher(String, '/clarification_request', RELIABLE_QOS)
+        self.pub_mission_status = self.create_publisher(String, '/mission_status', RELIABLE_QOS)
+        self.pub_wingman_msg    = self.create_publisher(String, '/agent/lead_to_wingman', 10)
+        self.pub_health         = self.create_publisher(String, '/agent/health', RELIABLE_QOS)
 
-        # ── Subscriptions ─────────────────────────────────────────
-        self.create_subscription(
-            String, '/drone_0/situation',   self._on_situation, 10)
-        self.create_subscription(
-            String, '/camera_0/detections', self._on_camera, 10)
-        self.create_subscription(
-            String, '/camera_0/obstacle_vector', self._on_obstacle, 10)
-        self.create_subscription(
-            String, '/voice_commands',      self._on_voice, 10)
-        self.create_subscription(
-            String, '/agent/wingman_to_lead', self._on_wingman_message, 10)
-        self.create_subscription(
-            String, '/safety/event',        self._on_safety_event, 10)
+        self.create_subscription(String, '/drone_0/situation',   self._on_situation, 10)
+        self.create_subscription(String, '/camera_0/detections', self._on_camera, 10)
+        self.create_subscription(String, '/camera_0/obstacle_vector', self._on_obstacle, 10)
+        self.create_subscription(String, '/voice_commands',      self._on_voice, 10)
+        self.create_subscription(String, '/agent/wingman_to_lead', self._on_wingman_message, 10)
+        self.create_subscription(String, '/safety/event',        self._on_safety_event, 10)
 
-        # ── Periodic health publisher ──────────────────────────────
         self.create_timer(10.0, self._publish_health)
 
-        self.get_logger().info(
-            f"Lead Agent ready — Ollama {host}:{port} model:{model} ctx:{self._num_ctx}")
+        self._build_graph()
 
-        # ── Fix #1: Self-start with STANDBY goal ──────────────────
+        self.get_logger().info(f"Lead Agent (LangGraph V2) ready — Ollama {host}:{port} model:{model}")
         self._assign_goal(
             "STANDBY: Monitor drone situation and await mission goal from "
             "Ground Commander. Call get_situation() to check state, "
             "then wait(30) and repeat indefinitely.")
 
-    # ════════════════════════════════════════════════════════════════
-    # ROS2 Callbacks
-    # ════════════════════════════════════════════════════════════════
+    def _build_graph(self):
+        workflow = StateGraph(AgentState)
+        
+        workflow.add_node("llm", self._llm_node)
+        workflow.add_node("tools", self._tool_node)
+        
+        workflow.set_entry_point("llm")
+        
+        def should_continue(state: AgentState):
+            if state.get("abort_flag", False) or state.get("mission_done", False):
+                return END
+            last_msg = state["messages"][-1]
+            if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                return "tools"
+            return END
+            
+        workflow.add_conditional_edges("llm", should_continue, {"tools": "tools", END: END})
+        workflow.add_edge("tools", "llm")
+        
+        self.graph = workflow.compile()
 
+    def _llm_node(self, state: AgentState):
+        if self._abort_event.is_set():
+            return {"abort_flag": True}
+            
+        sys_msg = SystemMessage(content=self.system_prompt + f"\n\n[GOAL]\n{state['goal']}\n\n[SITUATION]\n{state['latest_situation']}")
+        msgs = [sys_msg] + list(state["messages"])
+        
+        try:
+            response = self.llm_with_tools.invoke(msgs)
+            self._consecutive_failures = 0
+            self._slm_healthy = True
+            return {"messages": [response]}
+        except Exception as e:
+            self.get_logger().warning(f"SLM inference failed: {e}")
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                self._trigger_slm_health_fallback()
+                return {"abort_flag": True}
+            time.sleep(1.0)
+            return {"messages": [AIMessage(content="{}", additional_kwargs={"error": str(e)})]}
+
+    def _tool_node(self, state: AgentState):
+        if self._abort_event.is_set():
+            return {"abort_flag": True}
+            
+        last_msg = state["messages"][-1]
+        results = []
+        for call in getattr(last_msg, 'tool_calls', []):
+            tool_name = call['name']
+            params = call['args']
+            tool_id = call['id']
+            
+            self.get_logger().info(f"Lead → {tool_name}({json.dumps(params)[:100]})")
+            
+            tool_fn = next((t for t in self.tools if t.name == tool_name), None)
+            if tool_fn:
+                try:
+                    result = str(tool_fn.invoke(params))
+                except Exception as e:
+                    result = f"Error executing {tool_name}: {e}"
+            else:
+                result = f"Unknown tool '{tool_name}'."
+                
+            self.get_logger().info(f"← {result[:120]}")
+            self._publish_status(f"{tool_name}: {result[:80]}")
+            
+            if tool_name in self.FAST_TOOLS and not self._mission_done:
+                time.sleep(0.2)
+                
+            if tool_name == 'mission_complete':
+                self._mission_done = True
+                self._mission_report = result
+                
+            results.append(ToolMessage(content=result, tool_call_id=tool_id, name=tool_name))
+            
+        return {"messages": results, "mission_done": self._mission_done}
+
+    # Callbacks
     def _on_situation(self, msg: String):
         with self.lock:
             sit = msg.data
-            # Extract battery % from situation string for quick access
             m = re.search(r'bat:(\d+(?:\.\d+)?)', sit)
-            if m:
-                self.battery_pct = float(m.group(1))
+            if m: self.battery_pct = float(m.group(1))
                 
-            # --- SLM Edge Device Optimization: Push Safety Data ---
-            # Small models often forget to call scan_camera(). We push critical
-            # obstacle detections directly into their immediate situation context.
             has_obs = False
             if hasattr(self, 'camera_summary') and self.camera_summary:
                 cam = self.camera_summary.lower()
@@ -317,82 +350,56 @@ class LeadAgentNode(Node):
                 sit += "\nYou MUST call ask_human() immediately to handle this obstacle!"
                 
             self.own_situation = sit
-            
-        # Update context with fresh situation (called from ROS spin thread)
         self.ctx.update_situation(sit)
 
     def _on_camera(self, msg: String):
-        with self.lock:
-            self.camera_summary = msg.data
+        with self.lock: self.camera_summary = msg.data
 
     def _on_obstacle(self, msg: String):
-        with self.lock:
-            self.obstacle_vector = msg.data
+        with self.lock: self.obstacle_vector = msg.data
 
     def _on_voice(self, msg: String):
-        """Handle voice input: either a human answer or a new mission goal."""
         text = msg.data.strip()
-        if not text:
-            return
+        if not text: return
         self.get_logger().info(f"Voice: '{text}'")
-
-        # Fix #3: If waiting for human reply, this IS the answer
         if self._waiting_for_human:
             self._human_response = text
-            return   # agent loop will detect and inject [HUMAN ANSWERED]
-
-        # Otherwise: new mission goal — fix #4 handles safe replacement
+            return
         self._assign_goal(text)
 
     def _on_wingman_message(self, msg: String):
-        """Parse typed AgentMessage envelope from Wingman."""
         try:
             data     = json.loads(msg.data)
             msg_type = data.get('type', 'status')
             content  = data.get('content', msg.data)
-            sender   = data.get('sender', 'WINGMAN')
-        except Exception:
+        except:
             msg_type = 'status'
             content  = msg.data
-
         self.get_logger().info(f"Wingman [{msg_type}]: {content[:80]}")
         self.ctx.add_inter_agent_message("WINGMAN", f"[{msg_type.upper()}] {content}")
-
-        if msg_type == 'query':
-            self._wingman_query_pending = True
+        if msg_type == 'query': self._wingman_query_pending = True
 
     def _on_safety_event(self, msg: String):
-        """Inject safety events into agent context memory."""
         try:
             data = json.loads(msg.data)
             note = data.get('message', msg.data)
-        except Exception:
+        except:
             note = msg.data
         self.ctx.add_memory_note(f"[SAFETY] {note}")
         self.get_logger().warning(f"Safety event: {note[:100]}")
 
-    # ════════════════════════════════════════════════════════════════
-    # Goal Assignment (Fix #4 — safe replacement with abort event)
-    # ════════════════════════════════════════════════════════════════
-
     def _assign_goal(self, goal: str):
         self.get_logger().info(f"New goal: '{goal[:100]}'")
-
-        # Signal any running loop to exit cleanly
         if self._agent_running:
             self._abort_event.set()
-            # Wait for the previous thread to actually finish executing and exit
-            self.get_logger().info("Waiting for old agent thread to exit...")
-            while self._agent_running:
-                time.sleep(0.05)
-
-        # Reset state for new goal
+            while self._agent_running: time.sleep(0.05)
+            
         self._abort_event.clear()
         self.ctx.clear_history()
         
-        # Inject rigid stopping instruction to prevent SLM over-execution / hallucination
         if not goal.startswith("STANDBY"):
             goal += "\nCRITICAL: When you have finished the requested action, you MUST immediately call mission_complete to lock in your state and await the next command. Do not guess what to do next."
+        
         self.ctx.set_goal(goal)
         self._mission_done       = False
         self._mission_report     = ""
@@ -400,270 +407,82 @@ class LeadAgentNode(Node):
         self._human_response     = None
         self._human_wait_cycles  = 0
         self._consecutive_failures = 0
-        self._last_substantive_tool = None
         self._slm_healthy        = True
 
         self._agent_running = True
-        threading.Thread(target=self._agent_loop, daemon=True).start()
+        threading.Thread(target=self._run_graph, args=(goal,), daemon=True).start()
 
-    # ════════════════════════════════════════════════════════════════
-    # Agent Loop (the core think-act-observe cycle)
-    # ════════════════════════════════════════════════════════════════
-
-    def _agent_loop(self):
-        self.get_logger().info("Lead agent loop started.")
+    def _run_graph(self, goal: str):
+        self.get_logger().info("LangGraph execution started.")
         self._publish_status("Agent loop active.")
-
+        
+        initial_state = {
+            "messages": [HumanMessage(content="Start mission.")],
+            "goal": goal,
+            "latest_situation": self.own_situation,
+            "mission_done": False,
+            "abort_flag": False
+        }
+        
         while rclpy.ok() and not self._mission_done and not self._abort_event.is_set():
-
-            # ── Step 1: Handle pending human response (Fix #3) ──────
+            
             if self._waiting_for_human:
                 if self._human_response is not None:
-                    # Got the answer — inject into context
                     answer = self._human_response
                     self._human_response    = None
                     self._waiting_for_human = False
                     self._human_wait_cycles = 0
-                    self.ctx.add_memory_note(f"[HUMAN ANSWERED] {answer}")
-                    self.get_logger().info(f"Human answered: '{answer[:100]}'")
-                    # Fall through to normal SLM inference with answer in context
-
+                    initial_state["messages"].append(HumanMessage(content=f"[HUMAN ANSWERED] {answer}"))
                 else:
-                    # Still waiting: passive monitoring
                     self._human_wait_cycles += 1
-
                     if self._human_wait_cycles >= self.HUMAN_WAIT_TIMEOUT_CYCLES:
-                        # Timeout — proceed autonomously
                         self._waiting_for_human = False
                         self._human_wait_cycles = 0
-                        self.ctx.add_memory_note(
-                            "[HUMAN TIMEOUT] No response after 120s. "
-                            "Proceeding with best judgment.")
-                        self.get_logger().warning(
-                            "Human response timeout — continuing autonomously")
+                        initial_state["messages"].append(HumanMessage(content="[HUMAN TIMEOUT] No response. Proceed autonomously."))
                     else:
-                        # Get situation, then wait 3s before checking again
-                        sit = self.tools.execute('get_situation', {})
-                        self.ctx.add_tool_result('get_situation', {}, sit)
-                        self._publish_status(
-                            f"Waiting for human ({self._human_wait_cycles * 3}s elapsed)…")
                         time.sleep(3.0)
-                        continue   # do not call SLM while waiting
-
-            # ── Step 2: Handle Wingman query ─────────────────────────
+                        continue
+                        
             if self._wingman_query_pending:
                 self._wingman_query_pending = False
-                self.ctx.add_memory_note(
-                    "[NOTE] Wingman has a pending query. "
-                    "Use message_wingman(msg_type='reply') to answer it.")
-
-            # ── Step 3: Abort check ──────────────────────────────────
-            if self._abort_event.is_set():
+                initial_state["messages"].append(HumanMessage(content="[NOTE] Wingman has a pending query."))
+                
+            initial_state["latest_situation"] = self.own_situation
+            
+            result_state = self.graph.invoke(initial_state)
+            
+            if result_state.get("abort_flag") or self._abort_event.is_set():
                 break
-
-            # ── Step 4: Guard context size, then run SLM inference ────────
-            # If prompt > 75% of num_ctx (chars estimated at ~3.5 chars/token),
-            # auto-compress history to prevent context overflow that causes
-            # the model to output garbage JSON.
-            prompt    = self.ctx.build_prompt()
-            ctx_chars = int(self._num_ctx * 3.5 * 0.75)
-            if len(prompt) > ctx_chars:
-                self.ctx.compress_history()
-                prompt = self.ctx.build_prompt()
-                self.get_logger().info(
-                    f"Context compressed ({len(prompt)} chars > {ctx_chars} budget).")
-
-            tool_name, params = self._infer_tool_call(prompt)
-
-            # ── Step 5: Handle SLM failure ───────────────────────────
-            if tool_name is None:
-                self._consecutive_failures += 1
-                self.get_logger().warning(
-                    f"SLM parse failure "
-                    f"#{self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}")
-
-                if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
-                    self._trigger_slm_health_fallback()
-                    break   # exit loop after fallback
-
-                time.sleep(1.0)
-                continue
-
-            # ── Step 6: Successful inference — reset health counter ───
-            self._consecutive_failures = 0
-            if not self._slm_healthy:
-                self._slm_healthy = True
-                self.get_logger().info("SLM recovered — health restored.")
-
-            # ── Step 7: Execute tool ─────────────────────────────────
-            # SLM loop protection: small models often ignore instructions and repeat commands
-            if tool_name not in ['get_situation', 'wait', 'scan_camera', 'get_battery', 'get_wingman_situation']:
-                norm_p = {}
-                for k, v in params.items():
-                    if isinstance(v, str): norm_p[k] = v.lower().strip()
-                    elif isinstance(v, (int, float)): norm_p[k] = float(v)
-                    else: norm_p[k] = v
-                tool_sig = f"{tool_name}:{json.dumps(norm_p, sort_keys=True)}"
-                if tool_sig == getattr(self, '_last_substantive_tool', None):
-                    self.get_logger().warning(f"SLM LOOP DETECTED on {tool_sig}. Halting drone and auto-completing mission.")
-                    self.tools.execute('hover', {})
-                    tool_name = 'mission_complete'
-                    params = {'report': 'Auto-completed mission to prevent repetitive action loop. Drone halted.'}
-                else:
-                    self._last_substantive_tool = tool_sig
-
-            self.get_logger().info(
-                f"Lead → {tool_name}({json.dumps(params)[:100]})")
-            result = self.tools.execute(tool_name, params)
-            self.get_logger().info(f"← {result[:120]}")
-
-            # ── Step 8: Update context ───────────────────────────────
-            self.ctx.add_tool_result(tool_name, params, result)
-            self._publish_status(f"{tool_name}: {result[:80]}")
-
-            # ── Step 9: Brief pause for instant-return tools only ─────
-            # (Fix #2: removed unconditional 0.5s pause)
-            if tool_name in self.FAST_TOOLS and not self._mission_done:
-                time.sleep(0.2)
-
-        # ── Loop exit ────────────────────────────────────────────────
+                
+            if result_state.get("mission_done"):
+                break
+                
+            initial_state["messages"] = result_state["messages"][-6:]
+            initial_state["messages"].append(HumanMessage(content="Continue next step."))
+            time.sleep(1.0)
+            
         if self._mission_done:
-            self.get_logger().info(
-                f"Mission complete: {self._mission_report[:120]}")
+            self.get_logger().info(f"Mission complete: {self._mission_report[:120]}")
             self._publish_status(f"MISSION COMPLETE: {self._mission_report}")
-            # Announce to GCS speaker
             done_msg = String()
             done_msg.data = f"[MISSION COMPLETE] {self._mission_report}"
             self.pub_clarification.publish(done_msg)
-
         elif self._abort_event.is_set():
             self.get_logger().info("Agent loop aborted — new goal incoming.")
-
-        else:
-            self.get_logger().info("Agent loop ended (shutdown).")
-
+            
         self._agent_running = False
-
-    # ════════════════════════════════════════════════════════════════
-    # SLM Health Fallback (Fix #5)
-    # ════════════════════════════════════════════════════════════════
 
     def _trigger_slm_health_fallback(self):
         self._slm_healthy = False
-        self.get_logger().error(
-            f"SLM health failure ({self.MAX_CONSECUTIVE_FAILURES} consecutive failures) "
-            "— initiating RTL fallback")
-
-        # Notify human via GCS speaker
+        self.get_logger().error(f"SLM health failure — initiating RTL fallback")
         alert = String()
-        alert.data = (
-            f"CRITICAL ALERT: Lead SLM inference failed "
-            f"{self.MAX_CONSECUTIVE_FAILURES} consecutive times. "
-            "Autonomous control suspended. RTL initiated for safety.")
+        alert.data = "CRITICAL ALERT: Lead SLM inference failed. RTL initiated."
         self.pub_clarification.publish(alert)
-
-        # Issue RTL directly to commander (bypasses SLM)
         rtl_msg = String()
         rtl_msg.data = json.dumps({'action': 'rtl', 'confidence': 'high'})
         self.pub_intent.publish(rtl_msg)
-
         self._publish_status("SLM_HEALTH_FAILURE: RTL initiated")
-        self._publish_health()   # immediately update health topic
-
-    # ════════════════════════════════════════════════════════════════
-    # SLM Inference with 3-attempt retry
-    # ════════════════════════════════════════════════════════════════
-
-    def _infer_tool_call(self, prompt: str) -> tuple[str | None, dict]:
-        error_ctx = ""
-        for attempt in range(3):
-            # Build prompt with correction context on retry
-            full_prompt = prompt
-            if error_ctx:
-                full_prompt += (
-                    f"\n\n[CORRECTION NEEDED] {error_ctx}"
-                    f"\nOutput a valid JSON tool call only. Begin {{ end }}")
-
-            raw, latency = self.ollama.infer(full_prompt, self.system_prompt)
-            self.get_logger().debug(f"Inference {latency * 1000:.0f}ms")
-
-            # Abort check between retry attempts
-            if self._abort_event.is_set():
-                return None, {}
-
-            if raw is None:
-                error_ctx = "SLM returned no output."
-                continue
-
-            try:
-                raw_clean = raw.strip()
-                # --- SLM Edge Device Optimization: Robust JSON Extraction ---
-                # Small models (3B) often leak reasoning or output multiple JSON blocks.
-                # A naive rfind('}') grabs everything, corrupting the JSON. We use brace 
-                # counting to cleanly extract ONLY the very first complete JSON object.
-                start = raw_clean.find('{')
-                if start >= 0:
-                    brace_count = 0
-                    end = -1
-                    in_str = False
-                    escape = False
-                    for i, char in enumerate(raw_clean[start:], start=start):
-                        if escape:
-                            escape = False
-                            continue
-                        if char == '\\':
-                            escape = True
-                        elif char == '"':
-                            in_str = not in_str
-                        elif not in_str:
-                            if char == '{':
-                                brace_count += 1
-                            elif char == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end = i + 1
-                                    break
-                    if end > start:
-                        raw_clean = raw_clean[start:end]
-
-                data      = json.loads(raw_clean)
-                tool_name = data.get('tool', '')
-                params    = data.get('params', {})
-
-                # --- Edge Model Schema Fallback ---
-                # If model hallucinates {"scan_camera": {}} instead of {"tool": "scan_camera", "params": {}}
-                if not tool_name:
-                    for k, v in data.items():
-                        if self.tools.is_valid(k):
-                            tool_name = k
-                            params = v if isinstance(v, dict) else {}
-                            break
-
-                if not isinstance(params, dict):
-                    params = {}
-
-                if self.tools.is_valid(tool_name):
-                    return tool_name, params
-
-                error_ctx = (
-                    f"Unknown tool '{tool_name}'. Raw output was: {raw} "
-                    f"Valid tools: {sorted(self.tools.tools.keys())}")
-                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
-
-            except json.JSONDecodeError as exc:
-                error_ctx = (
-                    f"JSON parse error: {str(exc)[:80]}. "
-                    "Output ONLY {{\"tool\":\"...\",\"params\":{{...}}}}")
-                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
-            except Exception as exc:
-                error_ctx = f"Parse error: {str(exc)[:80]}"
-                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
-
-        return None, {}
-
-    # ════════════════════════════════════════════════════════════════
-    # Helpers
-    # ════════════════════════════════════════════════════════════════
+        self._publish_health()
 
     def _publish_status(self, text: str):
         msg = String()
@@ -681,10 +500,6 @@ class LeadAgentNode(Node):
         })
         self.pub_health.publish(msg)
 
-
-# ════════════════════════════════════════════════════════════════════
-# Entry point
-# ════════════════════════════════════════════════════════════════════
 
 def main(args=None):
     rclpy.init(args=args)

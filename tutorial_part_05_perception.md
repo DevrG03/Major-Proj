@@ -176,6 +176,43 @@ def _bbox_to_direction(center_x_norm: float) -> str:
     return "ahead"
 
 
+def _detect_road_direction(frame) -> str:
+    """
+    OpenCV algorithm to detect asphalt road direction using the bottom half of the frame.
+    Returns: 'straight', 'curve_left', 'curve_right', or 'lost'.
+    """
+    import cv2
+    import numpy as np
+    h, w = frame.shape[:2]
+    roi = frame[int(h/2):, :] # Bottom half
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    # Define asphalt gray range in HSV
+    lower_gray = np.array([0, 0, 40])
+    upper_gray = np.array([180, 50, 200])
+    mask = cv2.inRange(hsv, lower_gray, upper_gray)
+    
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return "lost"
+    
+    c = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(c) < 1000:
+        return "lost"
+        
+    M = cv2.moments(c)
+    if M["m00"] != 0:
+        cx = int(M["m10"] / M["m00"])
+        # Compare center of mass to center of frame
+        offset = (cx - (w / 2.0)) / (w / 2.0)
+        if offset < -0.2:
+            return "curve_left"
+        elif offset > 0.2:
+            return "curve_right"
+        else:
+            return "straight"
+    return "lost"
+
+
 def _run_yolo_on_frame(
     model: Any,
     frame,  # numpy ndarray (BGR)
@@ -219,13 +256,16 @@ def _run_yolo_on_frame(
             items.append(f"{label} {direction} {distance}")
             vectors.append(f"{label}:{direction}:{distance}")
 
+    road_dir = _detect_road_direction(frame)
     if items:
         count = len(items)
-        detections_text = f"Detected {count} obstacle(s): {', '.join(items)}"
+        detections_text = f"Detected {count} obstacle(s): {', '.join(items)} | Road: {road_dir}"
     else:
-        detections_text = ""
+        detections_text = f"Road: {road_dir}"
 
-    obstacle_vector = "|".join(vectors)
+    obstacle_vector = "|".join(vectors) if vectors else ""
+    obstacle_vector += f"|road:{road_dir}:none" if obstacle_vector else f"road:{road_dir}:none"
+    
     return detections_text, obstacle_vector
 
 
@@ -584,6 +624,43 @@ def _bbox_to_direction(center_x_norm: float) -> str:
     return "ahead"
 
 
+def _detect_road_direction(frame) -> str:
+    """
+    OpenCV algorithm to detect asphalt road direction using the bottom half of the frame.
+    Returns: 'straight', 'curve_left', 'curve_right', or 'lost'.
+    """
+    import cv2
+    import numpy as np
+    h, w = frame.shape[:2]
+    roi = frame[int(h/2):, :] # Bottom half
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    # Define asphalt gray range in HSV
+    lower_gray = np.array([0, 0, 40])
+    upper_gray = np.array([180, 50, 200])
+    mask = cv2.inRange(hsv, lower_gray, upper_gray)
+    
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return "lost"
+    
+    c = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(c) < 1000:
+        return "lost"
+        
+    M = cv2.moments(c)
+    if M["m00"] != 0:
+        cx = int(M["m10"] / M["m00"])
+        # Compare center of mass to center of frame
+        offset = (cx - (w / 2.0)) / (w / 2.0)
+        if offset < -0.2:
+            return "curve_left"
+        elif offset > 0.2:
+            return "curve_right"
+        else:
+            return "straight"
+    return "lost"
+
+
 def _run_yolo_on_frame(
     model: Any,
     frame,  # numpy ndarray (BGR)
@@ -625,13 +702,16 @@ def _run_yolo_on_frame(
             items.append(f"{label} {direction} {distance}")
             vectors.append(f"{label}:{direction}:{distance}")
 
+    road_dir = _detect_road_direction(frame)
     if items:
         count = len(items)
-        detections_text = f"Detected {count} obstacle(s): {', '.join(items)}"
+        detections_text = f"Detected {count} obstacle(s): {', '.join(items)} | Road: {road_dir}"
     else:
-        detections_text = ""
+        detections_text = f"Road: {road_dir}"
 
-    obstacle_vector = "|".join(vectors)
+    obstacle_vector = "|".join(vectors) if vectors else ""
+    obstacle_vector += f"|road:{road_dir}:none" if obstacle_vector else f"road:{road_dir}:none"
+    
     return detections_text, obstacle_vector
 
 

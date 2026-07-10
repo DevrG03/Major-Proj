@@ -122,14 +122,7 @@ Create the Python node on PC-2. It implements the reactive SLM think-loop, async
 cat << 'EOF' > ~/major_ws/src/major_project/major_project/wingman_pilot/wingman_agent_node.py
 """
 Wingman Agent Node — the always-active autonomous brain for Drone-1.
-
-Loophole Fixes Applied:
-- Fix #1: Boot self-starts with STANDBY goal.
-- Fix #2: Interruptible wait/search loop checking _abort_event.
-- Fix #3: Non-blocking ask_lead returning PENDING and monitoring.
-- Fix #4: Goal replacement aborting the running thread before re-init.
-- Fix #5: SLM health monitor initiating RTL after 5 consecutive failures.
-- Fix #7: Envelope-based typed inter-agent messages.
+Modified to use LangGraph StateGraph.
 """
 import rclpy
 from rclpy.node import Node
@@ -140,6 +133,12 @@ import os
 import re
 import threading
 import time
+
+from typing import TypedDict, Annotated, Sequence, Dict, Any
+import operator
+from langgraph.graph import StateGraph, END
+from langchain_community.chat_models import ChatOllama
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 # QoS matching the WingmanIntentBridgeNode and monitor subscribers
 RELIABLE_QOS = QoSProfile(
@@ -152,8 +151,7 @@ RELIABLE_QOS = QoSProfile(
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from major_project.common.ollama_client import OllamaClient
-from major_project.common.tool_registry import WingmanToolRegistry
+from major_project.common.tool_registry import get_wingman_tools
 from major_project.common.context_manager import ContextManager
 from major_project.common.agent_memory import AgentMemory
 from major_project.common.schemas import AgentMessage
@@ -165,6 +163,9 @@ def _load_prompt(filename: str) -> str:
     with open(path) as f:
         return f.read()
 
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    goal: str
 
 class WingmanAgentNode(Node):
 
@@ -174,97 +175,81 @@ class WingmanAgentNode(Node):
         'remember', 'get_battery',
     })
 
-    # After this many consecutive SLM failures → trigger RTL fallback
     MAX_CONSECUTIVE_FAILURES = 5
-
-    # After this many 3s monitoring cycles without Lead response → timeout
-    LEAD_WAIT_TIMEOUT_CYCLES = 20   # 20 × 3s = 60s
+    LEAD_WAIT_TIMEOUT_CYCLES = 20
 
     def __init__(self):
         super().__init__('wingman_agent_node')
 
-        # ── Parameters ────────────────────────────────────────────
         self.declare_parameter('ollama_host', 'localhost')
         self.declare_parameter('ollama_port', 11434)
         self.declare_parameter('model', 'qwen3.5:2b')
-        self.declare_parameter('num_ctx', 8192)  # raised: 1024 too small for system prompt
+        self.declare_parameter('num_ctx', 8192)
 
         host    = self.get_parameter('ollama_host').value
         port    = self.get_parameter('ollama_port').value
         model   = self.get_parameter('model').value
         self._num_ctx = self.get_parameter('num_ctx').value
 
-        # ── SLM client + system prompt ─────────────────────────────
-        self.ollama = OllamaClient(
-            host=host, port=port, model=model, num_ctx=self._num_ctx)
+        self.llm = ChatOllama(
+            base_url=f"http://{host}:{port}",
+            model=model,
+            num_ctx=self._num_ctx,
+            temperature=0.0
+        )
         self.system_prompt = _load_prompt('wingman_agent_system.txt')
 
-        # ── Shared sensor state (protected by self.lock) ──────────
         self.lock            = threading.Lock()
         self.own_situation   = ""
         self.camera_summary  = ""
         self.obstacle_vector = ""
         self.battery_pct     = 100.0
 
-        # ── Lead interaction state (non-blocking) ─────────────────
         self._waiting_for_lead  = False
         self._lead_response: str | None = None
         self._lead_wait_cycles  = 0
 
-        # ── Agent loop state ──────────────────────────────────────
         self._agent_running  = False
         self._mission_done   = False
         self._mission_report = ""
         self._abort_event    = threading.Event()
 
-        # ── SLM health tracking ───────────────────────────────────
         self._consecutive_failures = 0
         self._slm_healthy          = True
 
-        # ── Core components ───────────────────────────────────────
         self.ctx          = ContextManager()
         self.agent_memory = AgentMemory(db_name="wingman_agent_memory.db")
-        self.tools        = WingmanToolRegistry(self)
+        self.tools        = get_wingman_tools(self)
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
-        # ── Publishers ────────────────────────────────────────────
-        # RELIABLE_QOS must match WingmanIntentBridgeNode + monitor subscribers
-        self.pub_intent         = self.create_publisher(
-            String, '/wingman/approved_intent', RELIABLE_QOS)
-        self.pub_status_report  = self.create_publisher(
-            String, '/wingman/status_report_text', RELIABLE_QOS)
-        # Volatile OK — agent/health and lead comms use depth=10 on both sides
-        self.pub_lead_msg       = self.create_publisher(
-            String, '/agent/wingman_to_lead', 10)
-        self.pub_health         = self.create_publisher(
-            String, '/agent/health', RELIABLE_QOS)
+        self.pub_intent         = self.create_publisher(String, '/wingman/approved_intent', RELIABLE_QOS)
+        self.pub_status_report  = self.create_publisher(String, '/wingman/status_report_text', RELIABLE_QOS)
+        self.pub_lead_msg       = self.create_publisher(String, '/agent/wingman_to_lead', 10)
+        self.pub_health         = self.create_publisher(String, '/agent/health', RELIABLE_QOS)
 
-        # ── Subscriptions ─────────────────────────────────────────
-        self.create_subscription(
-            String, '/drone_1/situation',   self._on_situation, 10)
-        self.create_subscription(
-            String, '/camera_1/detections', self._on_camera, 10)
-        self.create_subscription(
-            String, '/camera_1/obstacle_vector', self._on_obstacle, 10)
-        self.create_subscription(
-            String, '/agent/lead_to_wingman', self._on_lead_message, 10)
-        self.create_subscription(
-            String, '/safety/event',        self._on_safety_event, 10)
+        self.create_subscription(String, '/drone_1/situation',   self._on_situation, 10)
+        self.create_subscription(String, '/camera_1/detections', self._on_camera, 10)
+        self.create_subscription(String, '/camera_1/obstacle_vector', self._on_obstacle, 10)
+        self.create_subscription(String, '/agent/lead_to_wingman', self._on_lead_message, 10)
+        self.create_subscription(String, '/safety/event',        self._on_safety_event, 10)
 
-        # ── Periodic health publisher ──────────────────────────────
         self.create_timer(10.0, self._publish_health)
+        
+        # Build LangGraph
+        graph = StateGraph(AgentState)
+        graph.add_node("agent", self._agent_node)
+        graph.add_node("tools", self._tools_node)
+        graph.set_entry_point("agent")
+        graph.add_conditional_edges("agent", self._should_continue)
+        graph.add_edge("tools", "agent")
+        self.app = graph.compile()
 
-        self.get_logger().info(
-            f"Wingman Agent ready — Ollama {host}:{port} model:{model} ctx:{self._num_ctx}")
+        self.get_logger().info(f"Wingman Agent ready — Ollama {host}:{port} model:{model} ctx:{self._num_ctx}")
 
-        # ── Fix #1: Self-start with STANDBY goal ──────────────────
         self._assign_goal(
             "STANDBY: Monitor own situation and await mission tasks from "
             "Lead Pilot. Call get_situation() to check state, "
             "then wait(30) and repeat indefinitely.")
-
-    # ════════════════════════════════════════════════════════════════
-    # ROS2 Callbacks
-    # ════════════════════════════════════════════════════════════════
 
     def _on_situation(self, msg: String):
         with self.lock:
@@ -283,24 +268,20 @@ class WingmanAgentNode(Node):
             self.obstacle_vector = msg.data
 
     def _on_lead_message(self, msg: String):
-        """Parse AgentMessage envelope from Lead."""
         try:
             envelope = AgentMessage.model_validate_json(msg.data)
             msg_type = envelope.type
             content  = envelope.content
         except Exception:
-            # Legacy fallback: treat raw string as a task
             msg_type = 'task'
             content  = msg.data
 
         self.get_logger().info(f"Lead [{msg_type}]: {content[:80]}")
 
-        # Fix #3: If waiting for lead reply, this is the answer
         if self._waiting_for_lead and msg_type in ('reply', 'status'):
             self._lead_response = content
             return
 
-        # Handle typed actions (Fix #7)
         if msg_type == 'task':
             self._assign_goal(content)
         elif msg_type == 'abort':
@@ -311,7 +292,6 @@ class WingmanAgentNode(Node):
             self.ctx.add_inter_agent_message("LEAD", f"[QUERY] {content}")
 
     def _on_safety_event(self, msg: String):
-        """Inject safety events into agent context memory."""
         try:
             data = json.loads(msg.data)
             note = data.get('message', msg.data)
@@ -320,26 +300,18 @@ class WingmanAgentNode(Node):
         self.ctx.add_memory_note(f"[SAFETY] {note}")
         self.get_logger().warning(f"Safety event: {note[:100]}")
 
-    # ════════════════════════════════════════════════════════════════
-    # Goal Assignment (Fix #4 — safe replacement with abort event)
-    # ════════════════════════════════════════════════════════════════
-
     def _assign_goal(self, goal: str):
         self.get_logger().info(f"New goal: '{goal[:100]}'")
 
-        # Signal any running loop to exit cleanly
         if self._agent_running:
             self._abort_event.set()
-            # Wait for the previous thread to actually finish executing and exit
             self.get_logger().info("Waiting for old agent thread to exit...")
             while self._agent_running:
                 time.sleep(0.05)
 
-        # Reset state for new goal
         self._abort_event.clear()
         self.ctx.clear_history()
         
-        # Inject rigid stopping instruction to prevent SLM over-execution / hallucination
         if not goal.startswith("STANDBY"):
             goal += "\nCRITICAL: When you have finished the requested action, you MUST immediately call mission_complete to lock in your state and await the next command. Do not guess what to do next."
         self.ctx.set_goal(goal)
@@ -355,18 +327,21 @@ class WingmanAgentNode(Node):
         self._agent_running = True
         threading.Thread(target=self._agent_loop, daemon=True).start()
 
-    # ════════════════════════════════════════════════════════════════
-    # Agent Loop (the core think-act-observe cycle)
-    # ════════════════════════════════════════════════════════════════
-
     def _agent_loop(self):
-        self.get_logger().info("Wingman agent loop started.")
+        self.get_logger().info("Wingman agent loop started with LangGraph.")
         self._publish_status("Agent loop active.")
 
-        while rclpy.ok() and not self._mission_done and not self._abort_event.is_set():
+        # Initialize LangGraph state
+        initial_state = {"messages": [], "goal": self.ctx.current_goal}
 
-            # ── Step 1: Handle pending Lead response (Fix #3) ────────
-            if self._waiting_for_lead:
+        # We will stream the graph execution to allow aborts
+        for output in self.app.stream(initial_state, {"recursion_limit": 1000}):
+            if self._mission_done or self._abort_event.is_set():
+                break
+                
+            # Handle Lead Wait manually outside the graph, or it can be a node, 
+            # but simpler to check in between steps.
+            while self._waiting_for_lead and not self._abort_event.is_set():
                 if self._lead_response is not None:
                     answer = self._lead_response
                     self._lead_response   = None
@@ -376,225 +351,115 @@ class WingmanAgentNode(Node):
                     self.get_logger().info(f"Lead answered: '{answer[:100]}'")
                 else:
                     self._lead_wait_cycles += 1
-
                     if self._lead_wait_cycles >= self.LEAD_WAIT_TIMEOUT_CYCLES:
                         self._waiting_for_lead = False
                         self._lead_wait_cycles = 0
-                        self.ctx.add_memory_note(
-                            "[LEAD TIMEOUT] No response after 60s. "
-                            "Proceeding with best judgment.")
-                        self.get_logger().warning(
-                            "Lead response timeout — continuing autonomously")
+                        self.ctx.add_memory_note("[LEAD TIMEOUT] No response after 60s. Proceeding with best judgment.")
                     else:
-                        sit = self.tools.execute('get_situation', {})
+                        get_sit_fn = next((t for t in self.tools if t.name == 'get_situation'), None)
+                        sit = str(get_sit_fn.invoke({})) if get_sit_fn else ""
                         self.ctx.add_tool_result('get_situation', {}, sit)
-                        self._publish_status(
-                            f"Waiting for Lead ({self._lead_wait_cycles * 3}s elapsed)…")
+                        self._publish_status(f"Waiting for Lead ({self._lead_wait_cycles * 3}s elapsed)…")
                         time.sleep(3.0)
-                        continue
 
-            # ── Step 2: Abort check ──────────────────────────────────
-            if self._abort_event.is_set():
-                break
-
-            # ── Step 3: Build prompt and run SLM inference ───────────
-            prompt = self.ctx.build_prompt()
-            tool_name, params = self._infer_tool_call(prompt)
-
-            # ── Step 4: Handle SLM failure ───────────────────────────
-            if tool_name is None:
-                self._consecutive_failures += 1
-                self.get_logger().warning(
-                    f"SLM parse failure "
-                    f"#{self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}")
-
-                if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
-                    self._trigger_slm_health_fallback()
-                    break
-
-                time.sleep(1.0)
-                continue
-
-            # ── Step 5: Successful inference — reset health counter ───
-            self._consecutive_failures = 0
-            if not self._slm_healthy:
-                self._slm_healthy = True
-                self.get_logger().info("SLM recovered — health restored.")
-
-            # ── Step 6: Execute tool ─────────────────────────────────
-            # SLM loop protection: small models often ignore instructions and repeat commands
-            if tool_name not in ['get_situation', 'wait', 'scan_camera', 'get_battery', 'get_wingman_situation']:
-                norm_p = {}
-                for k, v in params.items():
-                    if isinstance(v, str): norm_p[k] = v.lower().strip()
-                    elif isinstance(v, (int, float)): norm_p[k] = float(v)
-                    else: norm_p[k] = v
-                tool_sig = f"{tool_name}:{json.dumps(norm_p, sort_keys=True)}"
-                if tool_sig == getattr(self, '_last_substantive_tool', None):
-                    self.get_logger().warning(f"SLM LOOP DETECTED on {tool_sig}. Halting drone and auto-completing mission.")
-                    self.tools.execute('hover', {})
-                    tool_name = 'mission_complete'
-                    params = {'report': 'Auto-completed mission to prevent repetitive action loop. Drone halted.'}
-                else:
-                    self._last_substantive_tool = tool_sig
-
-            self.get_logger().info(
-                f"Wingman → {tool_name}({json.dumps(params)[:100]})")
-            result = self.tools.execute(tool_name, params)
-            self.get_logger().info(f"← {result[:120]}")
-
-            # ── Step 7: Update context ───────────────────────────────
-            self.ctx.add_tool_result(tool_name, params, result)
-            self._publish_status(f"{tool_name}: {result[:80]}")
-
-            # ── Step 8: Brief pause for instant-return tools only ─────
-            # (Fix #2: removed unconditional 0.5s pause)
-            if tool_name in self.FAST_TOOLS and not self._mission_done:
-                time.sleep(0.2)
-
-        # ── Loop exit ────────────────────────────────────────────────
         if self._mission_done:
-            self.get_logger().info(
-                f"Task complete: {self._mission_report[:120]}")
+            self.get_logger().info(f"Task complete: {self._mission_report[:120]}")
             self._publish_status(f"TASK COMPLETE: {self._mission_report}")
-            # Notify Lead Agent of completion
-            payload = json.dumps({
-                "type": "reply", "sender": "WINGMAN",
-                "content": f"[TASK COMPLETE] {self._mission_report}",
-                "order_id": None
-            })
+            payload = json.dumps({"type": "reply", "sender": "WINGMAN", "content": f"[TASK COMPLETE] {self._mission_report}", "order_id": None})
             msg = String()
             msg.data = payload
             self.pub_lead_msg.publish(msg)
 
         elif self._abort_event.is_set():
             self.get_logger().info("Agent loop aborted — new task incoming.")
-
         else:
             self.get_logger().info("Agent loop ended (shutdown).")
 
         self._agent_running = False
 
-    # ════════════════════════════════════════════════════════════════
-    # SLM Health Fallback (Fix #5)
-    # ════════════════════════════════════════════════════════════════
+    def _agent_node(self, state: AgentState):
+        if self._abort_event.is_set() or self._mission_done:
+            return {"messages": []}
+
+        prompt = self.ctx.build_prompt()
+        msgs = [SystemMessage(content=self.system_prompt), HumanMessage(content=prompt)]
+        
+        try:
+            response = self.llm_with_tools.invoke(msgs)
+            self._consecutive_failures = 0
+            if not self._slm_healthy:
+                self._slm_healthy = True
+            return {"messages": [response]}
+        except Exception as e:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                self._trigger_slm_health_fallback()
+            return {"messages": []}
+
+    def _tools_node(self, state: AgentState):
+        if self._abort_event.is_set():
+            return {"messages": []}
+            
+        last_msg = state['messages'][-1]
+        results = []
+        for call in getattr(last_msg, 'tool_calls', []):
+            tool_name = call['name']
+            params = call['args']
+            tool_id = call['id']
+            
+            if tool_name not in ['get_situation', 'wait', 'scan_camera', 'get_battery', 'get_wingman_situation']:
+                norm_p = {k: v.lower().strip() if isinstance(v, str) else float(v) if isinstance(v, (int, float)) else v for k, v in params.items()}
+                tool_sig = f"{tool_name}:{json.dumps(norm_p, sort_keys=True)}"
+                if tool_sig == getattr(self, '_last_substantive_tool', None):
+                    self.get_logger().warning(f"SLM LOOP DETECTED on {tool_sig}. Halting.")
+                    
+                    hover_fn = next((t for t in self.tools if t.name == 'hover'), None)
+                    if hover_fn: hover_fn.invoke({})
+                    tool_name = 'mission_complete'
+                    params = {'report': 'Auto-completed mission to prevent repetitive action loop.'}
+                else:
+                    self._last_substantive_tool = tool_sig
+
+            tool_fn = next((t for t in self.tools if t.name == tool_name), None)
+            if tool_fn:
+                try:
+                    result = str(tool_fn.invoke(params))
+                except Exception as e:
+                    result = f"Error executing {tool_name}: {e}"
+            else:
+                result = f"Unknown tool '{tool_name}'."
+                
+            self.ctx.add_tool_result(tool_name, params, result)
+            self._publish_status(f"{tool_name}: {result[:80]}")
+            
+            if tool_name in self.FAST_TOOLS and not self._mission_done:
+                time.sleep(0.2)
+                
+            results.append(ToolMessage(content=result, tool_call_id=tool_id, name=tool_name))
+            
+        return {"messages": results}
+
+    def _should_continue(self, state: AgentState):
+        if self._mission_done or self._abort_event.is_set() or self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+            return END
+        last_msg = state["messages"][-1]
+        if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+            return "tools"
+        return END
 
     def _trigger_slm_health_fallback(self):
         self._slm_healthy = False
-        self.get_logger().error(
-            f"SLM health failure ({self.MAX_CONSECUTIVE_FAILURES} consecutive failures) "
-            "— initiating RTL fallback")
-
-        # Notify Lead Agent via envelope message
-        payload = json.dumps({
-            "type": "status", "sender": "WINGMAN",
-            "content": f"CRITICAL ALERT: Wingman SLM inference failed {self.MAX_CONSECUTIVE_FAILURES} consecutive times. Initiating RTL fallback.",
-            "order_id": None
-        })
+        self.get_logger().error("SLM health failure — initiating RTL fallback")
+        payload = json.dumps({"type": "status", "sender": "WINGMAN", "content": "CRITICAL ALERT: SLM failed. RTL.", "order_id": None})
         msg = String()
         msg.data = payload
         self.pub_lead_msg.publish(msg)
 
-        # Issue RTL directly to commander (bypasses SLM)
         rtl_msg = String()
         rtl_msg.data = json.dumps({'action': 'rtl', 'confidence': 'high'})
         self.pub_intent.publish(rtl_msg)
-
         self._publish_status("SLM_HEALTH_FAILURE: RTL initiated")
         self._publish_health()
-
-    # ════════════════════════════════════════════════════════════════
-    # SLM Inference with 3-attempt retry
-    # ════════════════════════════════════════════════════════════════
-
-    def _infer_tool_call(self, prompt: str) -> tuple[str | None, dict]:
-        error_ctx = ""
-        for attempt in range(3):
-            full_prompt = prompt
-            if error_ctx:
-                full_prompt += (
-                    f"\n\n[CORRECTION NEEDED] {error_ctx}"
-                    f"\nOutput a valid JSON tool call only. Begin {{ end }}")
-
-            raw, latency = self.ollama.infer(full_prompt, self.system_prompt)
-            self.get_logger().debug(f"Inference {latency * 1000:.0f}ms")
-
-            if self._abort_event.is_set():
-                return None, {}
-
-            if raw is None:
-                error_ctx = "SLM returned no output."
-                continue
-
-            try:
-                raw_clean = raw.strip()
-                # --- SLM Edge Device Optimization: Robust JSON Extraction ---
-                # Small models (3B) often leak reasoning or output multiple JSON blocks.
-                # A naive rfind('}') grabs everything, corrupting the JSON. We use brace 
-                # counting to cleanly extract ONLY the very first complete JSON object.
-                start = raw_clean.find('{')
-                if start >= 0:
-                    brace_count = 0
-                    end = -1
-                    in_str = False
-                    escape = False
-                    for i, char in enumerate(raw_clean[start:], start=start):
-                        if escape:
-                            escape = False
-                            continue
-                        if char == '\\':
-                            escape = True
-                        elif char == '"':
-                            in_str = not in_str
-                        elif not in_str:
-                            if char == '{':
-                                brace_count += 1
-                            elif char == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end = i + 1
-                                    break
-                    if end > start:
-                        raw_clean = raw_clean[start:end]
-
-                data      = json.loads(raw_clean)
-                tool_name = data.get('tool', '')
-                params    = data.get('params', {})
-
-                # --- Edge Model Schema Fallback ---
-                # If model hallucinates {"scan_camera": {}} instead of {"tool": "scan_camera", "params": {}}
-                if not tool_name:
-                    for k, v in data.items():
-                        if self.tools.is_valid(k):
-                            tool_name = k
-                            params = v if isinstance(v, dict) else {}
-                            break
-
-                if not isinstance(params, dict):
-                    params = {}
-
-                if self.tools.is_valid(tool_name):
-                    return tool_name, params
-
-                error_ctx = (
-                    f"Unknown tool '{tool_name}'. Raw output was: {raw} "
-                    f"Valid tools: {sorted(self.tools.tools.keys())}")
-                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
-
-            except json.JSONDecodeError as exc:
-                error_ctx = (
-                    f"JSON parse error: {str(exc)[:80]}. "
-                    "Output ONLY {{\"tool\":\"...\",\"params\":{{...}}}}")
-                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
-            except Exception as exc:
-                error_ctx = f"Parse error: {str(exc)[:80]}"
-                self.get_logger().warning(f"Inference attempt {attempt+1} failed: {error_ctx}")
-
-        return None, {}
-
-    # ════════════════════════════════════════════════════════════════
-    # Helpers
-    # ════════════════════════════════════════════════════════════════
 
     def _publish_status(self, text: str):
         msg = String()
@@ -613,10 +478,6 @@ class WingmanAgentNode(Node):
         self.pub_health.publish(msg)
 
 
-# ════════════════════════════════════════════════════════════════════
-# Entry point
-# ════════════════════════════════════════════════════════════════════
-
 def main(args=None):
     rclpy.init(args=args)
     node = WingmanAgentNode()
@@ -625,7 +486,6 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
