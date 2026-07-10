@@ -1,0 +1,10 @@
+# LangGraph Agent Dependencies
+langchain-core
+langchain-community
+langgraph
+pydantic
+
+# Perception Dependencies
+ultralytics
+opencv-python-headless
+numpy
