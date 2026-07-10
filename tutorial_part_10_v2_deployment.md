@@ -301,6 +301,28 @@ EOF
 
 ## 10.5 Final Build Steps
 
+### Python Dependencies
+
+Before building the ROS 2 workspace, ensure all Python dependencies for the LangGraph agents and vision models are installed:
+
+```bash
+cat << 'EOF' > ~/major_ws/src/major_project/requirements.txt
+# LangGraph Agent Dependencies
+langchain-core
+langchain-community
+langchain-ollama
+langgraph
+pydantic
+
+# Perception Dependencies
+ultralytics
+opencv-python-headless
+numpy
+EOF
+
+pip install -r ~/major_ws/src/major_project/requirements.txt
+```
+
 ### PC-1 Build
 
 ```bash
@@ -353,8 +375,8 @@ sys.path.insert(0, os.path.expanduser('~/major_ws/src/major_project'))
 from major_project.common.schemas import FlightIntent, AgentMessage
 from major_project.common.context_manager import ContextManager
 from major_project.common.agent_memory import AgentMemory
-from major_project.common.tool_registry import LeadToolRegistry, WingmanToolRegistry
-from major_project.common.ollama_client import OllamaClient
+from major_project.common.tool_registry import get_lead_tools, get_wingman_tools
+
 print("All imports OK")
 
 # ── AgentMessage ──────────────────────────────────────────────────────────────
@@ -387,10 +409,26 @@ mem.remember("football found at N50m")
 results = mem.recall("football")
 assert len(results) == 1
 mem.clear()
-os.remove(os.path.expanduser("~/.ros/test_smoke.db"))
+try:
+    os.remove(os.path.expanduser("~/.ros/test_smoke.db"))
+except FileNotFoundError:
+    pass
 print("AgentMemory OK")
 
-print("\nAll smoke tests passed!")
+# ── Tool Factory Test ─────────────────────────────────────────────────────────
+# Create a dummy ROS node interface for tool closures
+class DummyNode:
+    lock = type('DummyLock', (), {'__enter__': lambda s: None, '__exit__': lambda s, a, b, c: None})()
+    own_situation = "alt:0.0m"
+    _abort_event = None
+
+lead_tools = get_lead_tools(DummyNode())
+wingman_tools = get_wingman_tools(DummyNode())
+assert any(t.name == 'takeoff' for t in lead_tools), "Takeoff tool missing from Lead"
+assert any(t.name == 'follow_lead' for t in wingman_tools), "follow_lead missing from Wingman"
+print(f"Tool Factories OK (Lead tools: {len(lead_tools)}, Wingman tools: {len(wingman_tools)})")
+
+print("\nAll V2 smoke tests passed! ✅")
 EOF
 ```
 
