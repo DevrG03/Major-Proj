@@ -22,8 +22,9 @@ Output EXACTLY ONE JSON object matching this schema:
 {
   "thought": "Reasoning about how to achieve the goal.",
   "checklist": [
-    {"tool": "tool_name", "params": {"key": value}},
-    {"tool": "tool_name", "params": {}}
+    {"tool": "hover", "params": {}},
+    {"tool": "message_lead", "params": {"message": "Roger that, holding position.", "msg_type": "reply"}},
+    {"tool": "mission_complete", "params": {"message": "Hovering."}}
   ]
 }
 

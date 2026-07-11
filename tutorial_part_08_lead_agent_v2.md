@@ -23,8 +23,9 @@ Output EXACTLY ONE JSON object matching this schema:
 {
   "thought": "Reasoning about how to achieve the goal based on the situation.",
   "checklist": [
-    {"tool": "tool_name", "params": {"key": value}},
-    {"tool": "tool_name", "params": {}}
+    {"tool": "takeoff", "params": {"altitude": 5.0}},
+    {"tool": "message_wingman", "params": {"message": "Hover at 3 meters.", "msg_type": "task"}},
+    {"tool": "mission_complete", "params": {"message": "Task delegated."}}
   ]
 }
 
