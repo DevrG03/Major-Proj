@@ -134,6 +134,7 @@ Thin wrapper around the Ollama REST API.
 import requests
 import time
 import logging
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class OllamaClient:
         self.timeout = 180.0
         self.max_retries = 3
 
-    def infer(self, prompt: str, system: str, schema: dict | None = None) -> tuple[str | None, float]:
+    def infer(self, prompt: str, system: str, schema: Optional[dict] = None) -> Tuple[Optional[str], float]:
         payload = {
             "model": self.model, "prompt": prompt, "system": system,
             "stream": False, "think": False,
