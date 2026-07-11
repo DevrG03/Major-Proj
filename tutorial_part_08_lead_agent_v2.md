@@ -148,6 +148,10 @@ class LeadAgentNode(Node):
         
         self.wingman_messages_buffer = []
 
+        # Agent Health
+        self.health_pub = self.create_publisher(String, '/agent/health', RELIABLE_QOS)
+        self.health_timer = self.create_timer(10.0, self._publish_health)
+        
         self.get_logger().info("Lead Agent V2 (LangGraph) ready.")
 
         # Build Graph
@@ -156,7 +160,19 @@ class LeadAgentNode(Node):
         # Start with Standby
         self._assign_goal("STANDBY: Hover and wait for Ground Commander instructions.")
 
-    # ── ROS Callbacks ────────────────────────────────────────────────
+    # ── Diagnostics ───────────────────────────────────────────────────────────
+    def _publish_health(self):
+        msg = String()
+        health_data = {
+            "node": "lead",
+            "slm_ok": self.planner_failures < 5,
+            "consecutive_failures": self.planner_failures
+        }
+        import json
+        msg.data = json.dumps(health_data)
+        self.health_pub.publish(msg)
+
+    # ── ROS 2 Callbacks ───────────────────────────────────────────────────────
     
     def _on_situation(self, msg: String):
         with self.lock:

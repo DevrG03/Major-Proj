@@ -140,12 +140,28 @@ class WingmanAgentNode(Node):
         self.create_subscription(String, '/camera_1/obstacle_vector', self._on_obstacle, 10)
         self.create_subscription(String, '/agent/lead_to_wingman', self._on_lead_message, 10)
 
+        # Agent Health
+        self.health_pub = self.create_publisher(String, '/agent/health', RELIABLE_QOS)
+        self.health_timer = self.create_timer(10.0, self._publish_health)
+
         self.get_logger().info("Wingman Agent V2 (LangGraph) ready.")
 
         self.graph = self._build_graph()
         self._assign_goal("STANDBY: Hover and wait for Lead Pilot instructions.")
 
-    # ── ROS Callbacks ────────────────────────────────────────────────
+    # ── Diagnostics ───────────────────────────────────────────────────────────
+    def _publish_health(self):
+        msg = String()
+        health_data = {
+            "node": "wingman",
+            "slm_ok": self.planner_failures < 5,
+            "consecutive_failures": self.planner_failures
+        }
+        import json
+        msg.data = json.dumps(health_data)
+        self.health_pub.publish(msg)
+
+    # ── ROS 2 Callbacks ───────────────────────────────────────────────────────
     
     def _on_situation(self, msg: String):
         with self.lock:
