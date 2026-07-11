@@ -742,8 +742,8 @@ class BaseToolRegistry:
         return f"Move complete. Reached {direction} {distance}m.{alt_note}"
 
     def _hover(self, params: dict) -> str:
-        intent = {"command": "hover"}
-        self._pub_intent(intent)
+        intent = {"action": "hover", "confidence": "high"}
+        self._publish_intent(intent)
         return "[HOVER] Command sent. Holding position."
 
     def _follow_road(self, params: dict) -> str:
@@ -767,13 +767,13 @@ class BaseToolRegistry:
             # The Baylands road runs roughly North-South.
             # We map the visual road direction to a compass heading.
             if road_dir == "curve_left":
-                intent = {"command": "move", "direction": "northwest", "distance_m": 2.0}
+                intent = {"action": "move", "direction": "northwest", "distance_m": 2.0}
             elif road_dir == "curve_right":
-                intent = {"command": "move", "direction": "northeast", "distance_m": 2.0}
+                intent = {"action": "move", "direction": "northeast", "distance_m": 2.0}
             else:
-                intent = {"command": "move", "direction": "north", "distance_m": 3.0}
+                intent = {"action": "move", "direction": "north", "distance_m": 3.0}
                 
-            self._pub_intent(intent)
+            self._publish_intent(intent)
             time.sleep(1.5)
             
         return f"[FOLLOW ROAD COMPLETE] Followed road for {duration} seconds."
