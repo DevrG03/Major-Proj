@@ -148,7 +148,7 @@ class OllamaClient:
     def infer(self, prompt: str, system: str) -> tuple[str | None, float]:
         payload = {
             "model": self.model, "prompt": prompt, "system": system,
-            "stream": False,
+            "stream": False, "think": False,
             "options": {"num_ctx": self.num_ctx, "temperature": 0}
         }
         for attempt in range(self.max_retries):
