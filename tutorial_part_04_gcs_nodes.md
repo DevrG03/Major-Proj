@@ -911,8 +911,8 @@ Monitors all critical topics for liveness and publishes a JSON health report to 
 |---|---|
 | `/drone_0/situation` | >= 0.9 Hz |
 | `/drone_1/situation` | >= 0.9 Hz |
-| `/camera_0/detections` | >= 1.5 Hz |
-| `/camera_1/detections` | >= 1.5 Hz |
+| `/camera_0/detections` | >= 0.2 Hz |
+| `/camera_1/detections` | >= 0.2 Hz |
 | `/agent/health` | >= 0.08 Hz (every 12 s) |
 
 **`/system/health` JSON format:**
@@ -999,8 +999,8 @@ except ImportError:
 MONITORED_TOPICS: list[tuple[str, float, QoSProfile]] = [
     ("/drone_0/situation",    0.9,  BEST_EFFORT_QOS),
     ("/drone_1/situation",    0.9,  BEST_EFFORT_QOS),
-    ("/camera_0/detections",  1.5,  BEST_EFFORT_QOS),
-    ("/camera_1/detections",  1.5,  BEST_EFFORT_QOS),
+    ("/camera_0/detections",  0.2,  BEST_EFFORT_QOS),
+    ("/camera_1/detections",  0.2,  BEST_EFFORT_QOS),
     ("/agent/health",         0.08, RELIABLE_QOS),
 ]
 

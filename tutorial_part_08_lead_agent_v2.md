@@ -163,10 +163,11 @@ class LeadAgentNode(Node):
     # ── Diagnostics ───────────────────────────────────────────────────────────
     def _publish_health(self):
         msg = String()
+        fails = getattr(self, '_consecutive_failures', 0)
         health_data = {
             "node": "lead",
-            "slm_ok": self.planner_failures < 5,
-            "consecutive_failures": self.planner_failures
+            "slm_ok": fails < 5,
+            "consecutive_failures": fails
         }
         import json
         msg.data = json.dumps(health_data)
