@@ -94,6 +94,15 @@ sys.path.insert(0, os.path.expanduser('~/major_ws/src/major_project'))
 from major_project.common.ollama_client import OllamaClient
 from major_project.common.tool_registry import LeadToolRegistry
 from major_project.common.schemas import AgentState
+from pydantic import BaseModel, Field
+
+class TaskItem(BaseModel):
+    tool: str = Field(description="The exact name of the tool to use")
+    params: dict = Field(default_factory=dict, description="A dictionary of arguments for the tool")
+
+class PlannerOutput(BaseModel):
+    thought: str = Field(description="Step-by-step reasoning")
+    checklist: list[TaskItem] = Field(description="The sequential list of tasks")
 
 RELIABLE_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
 
@@ -244,8 +253,9 @@ class LeadAgentNode(Node):
         if getattr(self, 'wingman_messages_buffer', []):
             context += "\n\n[WINGMAN COMMS]\n" + "\n".join(self.wingman_messages_buffer)
 
-        # Infer Checklist
-        raw_json, _ = self.ollama.infer(context, self.system_prompt)
+        # Infer Checklist using Pydantic JSON Schema Native Integration
+        schema = PlannerOutput.model_json_schema()
+        raw_json, _ = self.ollama.infer(context, self.system_prompt, schema=schema)
         
         # Patch 3: SLM Health Tracking
         if not getattr(self, '_consecutive_failures', False):
@@ -260,18 +270,14 @@ class LeadAgentNode(Node):
             return {"checklist": [], "current_task_index": 0}
 
         try:
-            data = json.loads(raw_json)
-            checklist = data.get("checklist", [])
-            if not isinstance(checklist, list):
-                raise ValueError("Checklist is not a list")
-            for item in checklist:
-                if not isinstance(item, dict) or "tool" not in item:
-                    raise ValueError("Checklist item is invalid")
-                    
+            # We can now confidently use Pydantic to validate the entire LLM output
+            parsed_data = PlannerOutput.model_validate_json(raw_json)
+            checklist = [item.model_dump() for item in parsed_data.checklist]
+            
             self.get_logger().info(f"Generated Checklist: {checklist}")
             self._consecutive_failures = 0 # Reset on success
             return {"checklist": checklist, "current_task_index": 0}
-        except (json.JSONDecodeError, ValueError) as e:
+        except Exception as e:
             self._consecutive_failures += 1
             self.get_logger().error(f"Failed to parse planner output ({e}). Failures: {self._consecutive_failures}")
             if self._consecutive_failures >= 5:

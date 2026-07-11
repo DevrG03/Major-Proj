@@ -145,12 +145,15 @@ class OllamaClient:
         self.timeout = 180.0
         self.max_retries = 3
 
-    def infer(self, prompt: str, system: str) -> tuple[str | None, float]:
+    def infer(self, prompt: str, system: str, schema: dict | None = None) -> tuple[str | None, float]:
         payload = {
             "model": self.model, "prompt": prompt, "system": system,
             "stream": False, "think": False,
             "options": {"num_ctx": self.num_ctx, "temperature": 0}
         }
+        if schema:
+            payload["format"] = schema
+            
         for attempt in range(self.max_retries):
             t_start = time.perf_counter()
             try:
@@ -158,10 +161,8 @@ class OllamaClient:
                 latency = time.perf_counter() - t_start
                 if response.status_code == 200:
                     raw = response.json().get("response", "").strip()
-                    start = raw.find("{")
-                    end   = raw.rfind("}") + 1
-                    if start >= 0 and end > start:
-                        return raw[start:end], latency
+                    if raw:
+                        return raw, latency
             except Exception as e:
                 print(f"[OllamaClient] Inference attempt {attempt+1} failed: {e}")
             time.sleep(0.5)
