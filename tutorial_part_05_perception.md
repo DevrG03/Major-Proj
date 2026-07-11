@@ -960,7 +960,7 @@ EOF
 
 ```bash
 # Link env
-export PYTHONPATH=$(find $(pwd)/.venv/lib -name site-packages -type d | head -n 1):$PYTHONPATH
+export PYTHONPATH=$(find ~/major_ws/.venv/lib -name site-packages -type d | head -n 1):$PYTHONPATH
 # ── Install vision dependencies ────────────────────────────────────────────────
 pip install ultralytics opencv-python-headless numpy
 
