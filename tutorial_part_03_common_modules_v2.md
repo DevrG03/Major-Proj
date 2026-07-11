@@ -149,7 +149,7 @@ class OllamaClient:
         payload = {
             "model": self.model, "prompt": prompt, "system": system,
             "stream": False, "think": False,
-            "options": {"num_ctx": self.num_ctx, "temperature": 0}
+            "options": {"num_ctx": self.num_ctx, "temperature": 0, "num_predict": 512}
         }
         if schema:
             payload["format"] = schema
