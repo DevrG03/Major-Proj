@@ -138,17 +138,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 class OllamaClient:
-    def __init__(self, host: str="localhost", port: int=11434, model: str="qwen3.5:2b", num_ctx: int=8192, max_retries: int=3, timeout: float=45.0):
-        self.url = f"http://{host}:{port}/api/generate"
+    def __init__(self, model: str = 'qwen3.5:2b', url: str = 'http://localhost:11434/api/generate', num_ctx: int = 4096):
         self.model = model
+        self.url = url
         self.num_ctx = num_ctx
-        self.max_retries = max_retries
-        self.timeout = timeout
+        self.timeout = 180.0
+        self.max_retries = 3
 
     def infer(self, prompt: str, system: str) -> tuple[str | None, float]:
         payload = {
             "model": self.model, "prompt": prompt, "system": system,
-            "stream": False, "format": "json",
+            "stream": False,
             "options": {"num_ctx": self.num_ctx, "temperature": 0}
         }
         for attempt in range(self.max_retries):
@@ -163,7 +163,7 @@ class OllamaClient:
                     if start >= 0 and end > start:
                         return raw[start:end], latency
             except Exception as e:
-                pass
+                print(f"[OllamaClient] Inference attempt {attempt+1} failed: {e}")
             time.sleep(0.5)
         return None, 0.0
 EOF
